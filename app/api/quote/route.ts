@@ -1,21 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const SYMBOL_MAP: Record<string, string> = {
-  "WIPRO":    "WIPRO.NS",
-  "INFY":     "INFY.NS",
-  "TCS":      "TCS.NS",
-  "RELIANCE": "RELIANCE.NS",
-  "HDFCBANK": "HDFCBANK.NS",
-  "NIFTY":    "^NSEI",
-};
+function toYahooSymbol(symbol: string): string {
+  const s = symbol.toUpperCase().trim();
+  if (s.startsWith("^") || s.endsWith(".NS") || s.endsWith(".BO")) return s;
+  const special: Record<string, string> = {
+    "NIFTY": "^NSEI", "NIFTY50": "^NSEI",
+    "SENSEX": "^BSESN", "BSESN": "^BSESN",
+  };
+  if (s in special) return special[s];
+  return `${s}.NS`;
+}
 
 export async function GET(req: NextRequest) {
   const symbol = req.nextUrl.searchParams.get("symbol") ?? "WIPRO";
-  const yahooSym = SYMBOL_MAP[symbol.toUpperCase()];
-
-  if (!yahooSym) {
-    return NextResponse.json({ error: `Unknown symbol: ${symbol}` }, { status: 400 });
-  }
+  const yahooSym = toYahooSymbol(symbol);
 
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1m&range=1d&includePrePost=false`;
@@ -35,7 +33,7 @@ export async function GET(req: NextRequest) {
     const result = json?.chart?.result?.[0];
 
     if (!result) {
-      return NextResponse.json({ error: "Yahoo Finance returned empty data" }, { status: 503 });
+      return NextResponse.json({ error: `No data returned for ${symbol}` }, { status: 503 });
     }
 
     const meta = result.meta ?? {};
@@ -43,7 +41,6 @@ export async function GET(req: NextRequest) {
     const prevClose = parseFloat((meta.previousClose ?? meta.chartPreviousClose ?? price).toFixed(2));
     const change = parseFloat((price - prevClose).toFixed(2));
     const changePct = prevClose > 0 ? parseFloat(((change / prevClose) * 100).toFixed(3)) : 0;
-
     const quoteData = result.indicators?.quote?.[0] ?? {};
 
     return NextResponse.json({

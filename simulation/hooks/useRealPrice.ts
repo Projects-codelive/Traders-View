@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
-import { getSimStock, SIM_STOCKS } from "../engine/marketData";
+import { getSimStock, getAllSymbols } from "../engine/marketData";
 
 export interface RealPriceTick {
   symbol:    string;
@@ -84,7 +84,7 @@ export function setSymbolPriority(activeSymbol: string) {
   doFetch(activeSymbol);
   activeTimers.set(activeSymbol, setInterval(() => doFetch(activeSymbol), 2000));
 
-  SIM_STOCKS
+  getAllSymbols()
     .filter(s => s.id !== activeSymbol)
     .forEach((s, i) => {
       const delay = (i + 1) * 4000;

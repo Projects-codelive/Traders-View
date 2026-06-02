@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const SYMBOL_MAP: Record<string, string> = {
-  "WIPRO":    "WIPRO.NS",
-  "INFY":     "INFY.NS",
-  "TCS":      "TCS.NS",
-  "RELIANCE": "RELIANCE.NS",
-  "HDFCBANK": "HDFCBANK.NS",
-  "NIFTY":    "^NSEI",
-};
+function toYahooSymbol(symbol: string): string {
+  const s = symbol.toUpperCase().trim();
+  if (s.startsWith("^") || s.endsWith(".NS") || s.endsWith(".BO")) return s;
+  const special: Record<string, string> = {
+    "NIFTY": "^NSEI", "NIFTY50": "^NSEI",
+    "SENSEX": "^BSESN", "BSESN": "^BSESN",
+  };
+  if (s in special) return special[s];
+  return `${s}.NS`;
+}
 
 const INTERVAL_MAP: Record<string, string> = {
   "1m": "1m",
@@ -29,13 +31,9 @@ export async function GET(req: NextRequest) {
   const symbol   = req.nextUrl.searchParams.get("symbol")   ?? "WIPRO";
   const interval = req.nextUrl.searchParams.get("interval") ?? "5m";
 
-  const yahooSym      = SYMBOL_MAP[symbol.toUpperCase()];
+  const yahooSym      = toYahooSymbol(symbol);
   const yahooInterval = INTERVAL_MAP[interval] ?? "5m";
   const yahooRange    = RANGE_MAP[interval]   ?? "5d";
-
-  if (!yahooSym) {
-    return NextResponse.json({ error: `Unknown symbol: ${symbol}`, candles: [] }, { status: 400 });
-  }
 
   try {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=${yahooInterval}&range=${yahooRange}`;

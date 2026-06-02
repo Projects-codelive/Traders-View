@@ -2,9 +2,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { SIM_STOCKS, getSimStock } from "@/simulation/engine/marketData";
+import { getSimStock, registerSymbol } from "@/simulation/engine/marketData";
 import { useRealPrice, setSymbolPriority } from "@/simulation/hooks/useRealPrice";
 import { useSimWallet } from "@/simulation/hooks/useSimWallet";
+import { useSymbolRegistry } from "@/simulation/hooks/useSymbolRegistry";
+import SymbolSearch from "@/simulation/components/SymbolSearch";
 import NSEChart from "@/simulation/components/NSEChart";
 import SellLotModal from "@/simulation/components/SellLotModal";
 import { TradeLot } from "@/lib/auth-types";
@@ -70,6 +72,7 @@ export default function Dashboard() {
   }, [selected]);
 
   // Hooks MUST be before the early return to comply with Rules of Hooks
+  const { activeTabs, removeSymbol, addSymbol } = useSymbolRegistry();
   const liveTick = useRealPrice(selected);
   const wallet = useSimWallet(session?.userId ?? "", session?.name ?? "");
   const selectedStock = getSimStock(selected)!;
@@ -81,7 +84,7 @@ export default function Dashboard() {
   const tradeCost = parseFloat((qty * liveTick.price).toFixed(2));
 
   const currentPrices: Record<string, number> = {};
-  SIM_STOCKS.forEach(s => {
+  activeTabs.forEach(s => {
     currentPrices[s.id] = s.basePrice;
   });
 
@@ -92,6 +95,27 @@ export default function Dashboard() {
     setSelected(id);
     setQty(1);
     setTradeMsg(null);
+  }
+
+  function handleSearchSelect(result: {
+    id: string; label: string; yahooSymbol: string;
+    sector: string; isIndex: boolean;
+  }) {
+    registerSymbol({
+      id:          result.id,
+      label:       result.label,
+      yahooSymbol: result.yahooSymbol,
+      basePrice:   0,
+      volatility:  0.015,
+      drift:       0.00005,
+      sector:      result.sector,
+      lotSize:     1,
+      isIndex:     result.isIndex,
+      isPinned:    false,
+      tvSymbol:    result.isIndex ? `NSE:${result.id}` : `NSE:${result.id}`,
+    });
+    addSymbol(result);
+    handleSymbolSelect(result.id);
   }
 
   function handleBuy() {
@@ -156,11 +180,9 @@ export default function Dashboard() {
       />
 
       <header className="flex items-center justify-between px-6 py-3 bg-gray-900 border-b border-gray-800 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <h1 className="text-lg font-bold text-green-400">{'\uD83D\uDCC8'} Paper Trader</h1>
-          <span className="text-xs bg-green-900/50 text-green-400 px-2 py-0.5 rounded-full font-medium border border-green-800/50">
-            LIVE DATA
-          </span>
+        <div className="flex items-center gap-4">
+          <h1 className="text-lg font-bold text-green-400 flex-shrink-0">{'\uD83D\uDCC8'} Paper Trader</h1>
+          <SymbolSearch onSelect={handleSearchSelect} />
         </div>
 
         <div className="flex items-center gap-5 text-sm">
@@ -215,25 +237,42 @@ export default function Dashboard() {
 
         <div className="flex flex-col flex-1 p-4 gap-3 min-w-0">
 
-          <div className="flex gap-2 flex-wrap flex-shrink-0">
-            {SIM_STOCKS.map(s => (
-              <button
-                key={s.id}
-                onClick={() => handleSymbolSelect(s.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5
-                  ${selected === s.id
-                    ? s.isIndex ? "bg-blue-500 text-white" : "bg-green-500 text-black"
-                    : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                  }`}
-              >
-                {s.label}
-                {s.isIndex && (
-                  <span className={`text-[10px] font-bold px-1 rounded uppercase
-                    ${selected === s.id ? "bg-blue-700 text-blue-100" : "bg-gray-700 text-blue-400"}`}>
-                    INDEX
-                  </span>
+          <div className="flex gap-1.5 flex-wrap flex-shrink-0">
+            {activeTabs.map(s => (
+              <div key={s.id} className="relative group">
+                <button
+                  onClick={() => handleSymbolSelect(s.id)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5
+                    ${selected === s.id
+                      ? s.isIndex ? "bg-blue-600 text-white" : "bg-green-500 text-black"
+                      : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                    }`}
+                  style={{ paddingRight: !s.isPinned ? "1.5rem" : undefined }}
+                >
+                  {s.label}
+                  {s.isIndex && (
+                    <span className={`text-[10px] font-bold px-1 rounded uppercase
+                      ${selected === s.id ? "bg-blue-800 text-blue-200" : "bg-gray-800 text-blue-400"}`}>
+                      INDEX
+                    </span>
+                  )}
+                </button>
+                {!s.isPinned && (
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      removeSymbol(s.id);
+                      if (selected === s.id) handleSymbolSelect("WIPRO");
+                    }}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full
+                               flex items-center justify-center text-gray-600 hover:text-red-400
+                               hover:bg-red-400/10 transition opacity-0 group-hover:opacity-100"
+                    title="Remove tab"
+                  >
+                    ×
+                  </button>
                 )}
-              </button>
+              </div>
             ))}
           </div>
 
@@ -349,7 +388,7 @@ export default function Dashboard() {
           <div className="p-4 border-b border-gray-800">
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Live Prices</h2>
             <div className="space-y-1">
-              {SIM_STOCKS.filter(s => !s.isIndex).map(s => (
+              {activeTabs.filter(s => !s.isIndex).map(s => (
                 <PriceTicker
                   key={s.id}
                   symbol={s.id}

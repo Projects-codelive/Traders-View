@@ -143,7 +143,7 @@ function AllocationDonut({ allocation, closedLabel, pnlLabel }: { allocation: Re
   const topAsset = entries[0];
 
   return (
-    <div className="flex items-center gap-6">
+    <div className="flex items-center gap-2">
       <div className="relative flex-shrink-0">
         <svg width="140" height="140" viewBox="0 0 140 140">
           <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1f2937" strokeWidth={stroke} />
@@ -218,7 +218,7 @@ function TraderProfile({
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl"
+        className="w-full max-w-4xl rounded-2xl overflow-hidden shadow-2xl"
         style={{ background: "#0d1117", border: "1px solid #1f2937" }}
       >
         <div className="px-6 pt-6 pb-4 border-b border-gray-800 flex items-start justify-between">
@@ -272,7 +272,7 @@ function TraderProfile({
             </div>
             <div
               className="rounded-xl overflow-hidden"
-              style={{ height: 200, background: "#0a0e17", border: "1px solid #1f2937" }}
+              style={{ height: 270, background: "#0a0e17", border: "1px solid #1f2937" }}
             >
               <EquityCurveChart curve={entry.equityCurve ?? []} />
             </div>

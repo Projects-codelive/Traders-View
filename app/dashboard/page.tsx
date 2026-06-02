@@ -290,7 +290,7 @@ export default function Dashboard() {
             {!liveTick.isLive && (
               <div className="flex items-center gap-2 bg-orange-950/40 border border-orange-800/40 text-orange-300 text-xs px-3 py-2 rounded-lg mb-3">
                 <span>{'\u26A0\uFE0F'}</span>
-                <span>Price feed unavailable {'\u2014'} check that the Python proxy is running (<code>uvicorn main:app --reload --port 8000</code>). Trades are disabled until price is live.</span>
+                <span>Price feed unavailable: {liveTick.error || 'Unknown error'}. Trades are disabled until price is live.</span>
               </div>
             )}
 

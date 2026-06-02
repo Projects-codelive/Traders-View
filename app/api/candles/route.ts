@@ -48,33 +48,33 @@ export async function GET(req: NextRequest) {
     });
 
     if (!res.ok) {
-      return NextResponse.json({ error: "Yahoo Finance API unavailable", candles: [] }, { status: 503 });
+      return NextResponse.json({ error: `Yahoo Finance API unavailable (HTTP ${res.status})`, candles: [] }, { status: 503 });
     }
 
-    const data = await res.json();
-    const result = data.chart.result[0];
-    const timestamps: number[] = result.timestamp;
-    const quoteData = result.indicators.quote[0];
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
 
-    if (!timestamps || timestamps.length === 0) {
+    if (!result) {
       return NextResponse.json({ symbol: symbol.toUpperCase(), interval, candles: [] });
     }
+
+    const timestamps: number[] = result.timestamp ?? [];
+    const quote = result.indicators?.quote?.[0] ?? {};
 
     const candles = timestamps
       .map((t, i) => ({
         time:   t,
-        open:   Math.round((quoteData.open[i]   ?? 0) * 100) / 100,
-        high:   Math.round((quoteData.high[i]   ?? 0) * 100) / 100,
-        low:    Math.round((quoteData.low[i]    ?? 0) * 100) / 100,
-        close:  Math.round((quoteData.close[i]  ?? 0) * 100) / 100,
-        volume: Math.round(quoteData.volume[i]  ?? 0),
+        open:   parseFloat((quote.open?.[i]   ?? 0).toFixed(2)),
+        high:   parseFloat((quote.high?.[i]   ?? 0).toFixed(2)),
+        low:    parseFloat((quote.low?.[i]    ?? 0).toFixed(2)),
+        close:  parseFloat((quote.close?.[i]  ?? 0).toFixed(2)),
+        volume: Math.floor(quote.volume?.[i]  ?? 0),
       }))
-      .filter(c => c.close !== 0);
-
-    candles.sort((a, b) => a.time - b.time);
+      .filter(c => c.close > 0)
+      .sort((a, b) => a.time - b.time);
 
     return NextResponse.json({ symbol: symbol.toUpperCase(), interval, candles });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message, candles: [] }, { status: 500 });
+    return NextResponse.json({ error: `Candle fetch failed: ${err.message}`, candles: [] }, { status: 500 });
   }
 }

@@ -28,38 +28,37 @@ export async function GET(req: NextRequest) {
     });
 
     if (!res.ok) {
-      return NextResponse.json({ error: "Yahoo Finance API unavailable" }, { status: 503 });
+      return NextResponse.json({ error: `Yahoo Finance API unavailable (HTTP ${res.status})` }, { status: 503 });
     }
 
-    const data = await res.json();
-    const result = data.chart.result[0];
-    const meta = result.meta;
-    const timestamps = result.timestamp;
-    const quoteData = result.indicators.quote[0];
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
 
-    if (!timestamps || !quoteData.close || quoteData.close.at(-1) == null) {
-      return NextResponse.json({ error: "No market data — market may be closed" }, { status: 503 });
+    if (!result) {
+      return NextResponse.json({ error: "Yahoo Finance returned empty data" }, { status: 503 });
     }
 
-    const i = -1;
-    const price = Math.round(quoteData.close[i] * 100) / 100;
-    const prevClose = Math.round((meta.chartPreviousClose ?? price) * 100) / 100;
-    const change = Math.round((price - prevClose) * 100) / 100;
-    const changePct = prevClose ? Math.round((change / prevClose) * 10000) / 10000 : 0;
+    const meta = result.meta ?? {};
+    const price = parseFloat((meta.regularMarketPrice ?? 0).toFixed(2));
+    const prevClose = parseFloat((meta.previousClose ?? meta.chartPreviousClose ?? price).toFixed(2));
+    const change = parseFloat((price - prevClose).toFixed(2));
+    const changePct = prevClose > 0 ? parseFloat(((change / prevClose) * 100).toFixed(3)) : 0;
+
+    const quoteData = result.indicators?.quote?.[0] ?? {};
 
     return NextResponse.json({
       symbol: symbol.toUpperCase(),
-      ltp: price,
+      ltp: price || 0,
       change,
       changePct,
-      open: Math.round((quoteData.open[i] ?? 0) * 100) / 100,
-      high: Math.round((quoteData.high[i] ?? 0) * 100) / 100,
-      low: Math.round((quoteData.low[i] ?? 0) * 100) / 100,
-      volume: Math.round(quoteData.volume[i] ?? 0),
+      open: parseFloat((quoteData.open?.[0] ?? 0).toFixed(2)),
+      high: parseFloat((quoteData.high?.[0] ?? 0).toFixed(2)),
+      low: parseFloat((quoteData.low?.[0] ?? 0).toFixed(2)),
+      volume: Math.floor(quoteData.volume?.[0] ?? 0),
       prevClose,
-      timestamp: Math.floor(Date.now() / 1000),
+      timestamp: Date.now(),
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: `Quote fetch failed: ${err.message}` }, { status: 500 });
   }
 }

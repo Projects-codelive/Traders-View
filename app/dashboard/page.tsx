@@ -119,7 +119,7 @@ export default function Dashboard() {
   }
 
   function handleBuy() {
-    if (isIndex || !liveTick.isLive) return;
+    if (!liveTick.isLive) return;
     const ok = wallet.buy(selected, qty, liveTick.price);
     setTradeMsg(ok
       ? { text: `\u2705 New lot: ${qty} \u00D7 ${selected} @ ₹${liveTick.price.toFixed(2)} | Cost ₹${tradeCost.toFixed(2)}`, ok: true }
@@ -129,7 +129,6 @@ export default function Dashboard() {
   }
 
   function handleSellClick() {
-    if (isIndex) return;
     const symbolLots = wallet.getOpenLots(selected);
     if (symbolLots.length === 0) {
       setTradeMsg({ text: `\u274C You do not own any positions of ${selected} to sell.`, ok: false });
@@ -316,7 +315,7 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {holding.length > 0 && !isIndex && (
+              {holding.length > 0 && (
                 <div className="text-right text-sm">
                   <div className="text-gray-400">{holding.length} open lot{holding.length !== 1 ? "s" : ""} in {selected}</div>
                   <div className="text-gray-400">
@@ -333,8 +332,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {!isIndex && (
-              <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-gray-400">Qty</label>
                   <input
@@ -371,7 +369,6 @@ export default function Dashboard() {
                   SELL
                 </button>
               </div>
-            )}
 
             {tradeMsg && (
               <div className={`mt-3 text-sm px-3 py-2 rounded-lg ${tradeMsg.ok
@@ -388,7 +385,7 @@ export default function Dashboard() {
           <div className="p-4 border-b border-gray-800">
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Live Prices</h2>
             <div className="space-y-1">
-              {activeTabs.filter(s => !s.isIndex).map(s => (
+              {activeTabs.map(s => (
                 <PriceTicker
                   key={s.id}
                   symbol={s.id}

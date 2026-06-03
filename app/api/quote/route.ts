@@ -11,51 +11,95 @@ function toYahooSymbol(symbol: string): string {
   return `${s}.NS`;
 }
 
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+
+interface QuoteResult {
+  ltp: number;
+  change: number;
+  changePct: number;
+  open: number;
+  high: number;
+  low: number;
+  volume: number;
+  prevClose: number;
+}
+
+async function fetchQuoteV7(yahooSym: string): Promise<QuoteResult | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${yahooSym}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const r = json?.quoteResponse?.result?.[0];
+    if (!r) return null;
+    const price = parseFloat((r.regularMarketPrice ?? 0).toFixed(2));
+    if (price <= 0) return null;
+    const prevClose = parseFloat((r.regularMarketPreviousClose ?? 0).toFixed(2));
+    return {
+      ltp: price,
+      change: parseFloat((r.regularMarketChange ?? 0).toFixed(2)),
+      changePct: parseFloat((r.regularMarketChangePercent ?? 0).toFixed(3)),
+      open: parseFloat((r.regularMarketOpen ?? 0).toFixed(2)),
+      high: parseFloat((r.regularMarketDayHigh ?? 0).toFixed(2)),
+      low: parseFloat((r.regularMarketDayLow ?? 0).toFixed(2)),
+      volume: Math.floor(r.regularMarketVolume ?? 0),
+      prevClose: prevClose || price,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function fetchChartFallback(yahooSym: string): Promise<QuoteResult | null> {
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1m&range=1d&includePrePost=false`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": UA, Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const result = json?.chart?.result?.[0];
+    if (!result) return null;
+    const meta = result.meta ?? {};
+    const price = parseFloat((meta.regularMarketPrice ?? 0).toFixed(2));
+    if (price <= 0) return null;
+    const prevClose = parseFloat((meta.previousClose ?? meta.chartPreviousClose ?? price).toFixed(2));
+    const quoteData = result.indicators?.quote?.[0] ?? {};
+    return {
+      ltp: price,
+      change: parseFloat((price - prevClose).toFixed(2)),
+      changePct: prevClose > 0 ? parseFloat((((price - prevClose) / prevClose) * 100).toFixed(3)) : 0,
+      open: parseFloat((quoteData.open?.[0] ?? 0).toFixed(2)),
+      high: parseFloat((quoteData.high?.[0] ?? 0).toFixed(2)),
+      low: parseFloat((quoteData.low?.[0] ?? 2).toFixed(2)),
+      volume: Math.floor(quoteData.volume?.[0] ?? 0),
+      prevClose,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const symbol = req.nextUrl.searchParams.get("symbol") ?? "WIPRO";
   const yahooSym = toYahooSymbol(symbol);
 
-  try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSym}?interval=1m&range=1d&includePrePost=false`;
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json",
-      },
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      return NextResponse.json({ error: `Yahoo Finance API unavailable (HTTP ${res.status})` }, { status: 503 });
-    }
-
-    const json = await res.json();
-    const result = json?.chart?.result?.[0];
-
-    if (!result) {
-      return NextResponse.json({ error: `No data returned for ${symbol}` }, { status: 503 });
-    }
-
-    const meta = result.meta ?? {};
-    const price = parseFloat((meta.regularMarketPrice ?? 0).toFixed(2));
-    const prevClose = parseFloat((meta.previousClose ?? meta.chartPreviousClose ?? price).toFixed(2));
-    const change = parseFloat((price - prevClose).toFixed(2));
-    const changePct = prevClose > 0 ? parseFloat(((change / prevClose) * 100).toFixed(3)) : 0;
-    const quoteData = result.indicators?.quote?.[0] ?? {};
-
-    return NextResponse.json({
-      symbol: symbol.toUpperCase(),
-      ltp: price || 0,
-      change,
-      changePct,
-      open: parseFloat((quoteData.open?.[0] ?? 0).toFixed(2)),
-      high: parseFloat((quoteData.high?.[0] ?? 0).toFixed(2)),
-      low: parseFloat((quoteData.low?.[0] ?? 0).toFixed(2)),
-      volume: Math.floor(quoteData.volume?.[0] ?? 0),
-      prevClose,
-      timestamp: Date.now(),
-    });
-  } catch (err: any) {
-    return NextResponse.json({ error: `Quote fetch failed: ${err.message}` }, { status: 500 });
+  // Try v7 quote endpoint first (real-time), fall back to v8 chart
+  let data = await fetchQuoteV7(yahooSym);
+  if (!data) data = await fetchChartFallback(yahooSym);
+  if (!data) {
+    return NextResponse.json({ error: `No data available for ${symbol}` }, { status: 503 });
   }
+
+  return NextResponse.json({
+    symbol: symbol.toUpperCase(),
+    ...data,
+    timestamp: Date.now(),
+  });
 }

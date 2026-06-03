@@ -40,7 +40,7 @@ async function doFetch(symbol: string): Promise<void> {
   try {
     const res = await fetch(`/api/quote?symbol=${symbol}`, {
       cache:  "no-store",
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -82,15 +82,15 @@ export function setSymbolPriority(activeSymbol: string) {
   activeTimers.clear();
 
   doFetch(activeSymbol);
-  activeTimers.set(activeSymbol, setInterval(() => doFetch(activeSymbol), 2000));
+  activeTimers.set(activeSymbol, setInterval(() => doFetch(activeSymbol), 400));
 
   getAllSymbols()
     .filter(s => s.id !== activeSymbol)
     .forEach((s, i) => {
-      const delay = (i + 1) * 4000;
+      const delay = (i + 1) * 3000;
       const t = setTimeout(() => {
         doFetch(s.id);
-        const bgTimer = setInterval(() => doFetch(s.id), 30000);
+        const bgTimer = setInterval(() => doFetch(s.id), 10000);
         activeTimers.set(s.id, bgTimer);
       }, delay);
       activeTimers.set(`_delay_${s.id}`, t as any);

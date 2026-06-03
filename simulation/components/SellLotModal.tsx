@@ -309,7 +309,7 @@ export default function SellLotModal({
             <button
               type="button"
               onClick={handleConfirm}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-red-650 hover:bg-red-550 text-white font-bold text-sm transition"
+              className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm transition"
             >
               Confirm Sell
             </button>

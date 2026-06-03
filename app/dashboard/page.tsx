@@ -1,6 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getSimStock, registerSymbol } from "@/simulation/engine/marketData";
 import { useRealPrice, setSymbolPriority } from "@/simulation/hooks/useRealPrice";
@@ -52,8 +52,9 @@ function PriceTicker({ symbol, isSelected, onClick }: {
   );
 }
 
-export default function Dashboard() {
+function DashboardInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { session, loading, logout } = useAuth();
 
   const [selected, setSelected] = useState("NIFTY");
@@ -66,6 +67,15 @@ export default function Dashboard() {
   useEffect(() => {
     if (!loading && !session) router.replace("/");
   }, [session, loading]);
+
+  // Read ?symbol= URL param on mount (set by markets page)
+  useEffect(() => {
+    const sym = searchParams.get("symbol");
+    if (!sym) return;
+    const s = sym.toUpperCase();
+    setSelected(s);
+    setSymbolPriority(s);
+  }, []);
 
   useEffect(() => {
     setSymbolPriority(selected);
@@ -207,6 +217,13 @@ export default function Dashboard() {
             className="text-xs bg-yellow-700/80 hover:bg-yellow-600 text-white px-3 py-1.5 rounded-lg font-medium transition"
           >
             {'\uD83C\uDFC6'} Leaderboard
+          </button>
+          <button
+            onClick={() => router.push("/dashboard/markets")}
+            className="text-xs px-3 py-1.5 rounded-lg font-medium transition"
+            style={{ background: "#00d4aa18", color: "#00d4aa", border: "1px solid #00d4aa33" }}
+          >
+            {'\uD83C\uDDEE\uD83C\uDDF3'} Markets
           </button>
 
           <div className="flex items-center gap-2 bg-gray-800 rounded-full px-3 py-1.5">
@@ -488,5 +505,13 @@ export default function Dashboard() {
         </aside>
       </div>
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense fallback={null}>
+      <DashboardInner />
+    </Suspense>
   );
 }

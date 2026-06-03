@@ -198,25 +198,17 @@ export function useSimWallet(userId: string, userName: string) {
       ? parseFloat((durationsHours.reduce((a, b) => a + b, 0) / durationsHours.length).toFixed(1))
       : 0;
 
-    const openLots = state.lots.filter(l => !l.isClosed);
-    const totalInvested = openLots.reduce((s, l) => s + l.remainingQty * l.buyPrice, 0);
+    // Asset allocation: total cost invested per symbol across ALL trades
+    const costBySymbol: Record<string, number> = {};
+    for (const lot of state.lots) {
+      const cost = lot.originalQty * lot.buyPrice;
+      costBySymbol[lot.symbol] = (costBySymbol[lot.symbol] ?? 0) + cost;
+    }
+    const totalCostAll = Object.values(costBySymbol).reduce((s, v) => s + v, 0);
     const assetAllocation: Record<string, number> = {};
-    if (totalInvested > 0) {
-      openLots.forEach(l => {
-        assetAllocation[l.symbol] = parseFloat(
-          ((assetAllocation[l.symbol] ?? 0) + l.remainingQty * l.buyPrice / totalInvested * 100).toFixed(1)
-        );
-      });
-    } else if (allSells.length > 0) {
-      const pnlBySymbol: Record<string, number> = {};
-      for (const s of allSells) {
-        pnlBySymbol[s.symbol] = (pnlBySymbol[s.symbol] ?? 0) + s.pnl;
-      }
-      const totalAbs = Object.values(pnlBySymbol).reduce((s, v) => s + Math.abs(v), 0);
-      if (totalAbs > 0) {
-        for (const [sym, pnl] of Object.entries(pnlBySymbol)) {
-          assetAllocation[sym] = parseFloat(((Math.abs(pnl) / totalAbs) * 100).toFixed(1));
-        }
+    if (totalCostAll > 0) {
+      for (const [sym, cost] of Object.entries(costBySymbol)) {
+        assetAllocation[sym] = parseFloat(((cost / totalCostAll) * 100).toFixed(1));
       }
     }
 
@@ -224,9 +216,13 @@ export function useSimWallet(userId: string, userName: string) {
       `${s.pnl >= 0 ? "📈" : "📉"} Sold ${s.qtySold}×${s.symbol} ${s.pnl >= 0 ? "+" : ""}₹${s.pnl.toFixed(0)}`
     );
 
+    const openLots = state.lots.filter(l => !l.isClosed);
     const openLotsValue = openLots.reduce((s, l) => s + l.remainingQty * l.buyPrice, 0);
+    const totalInvested = openLotsValue;
     const portfolioValue = parseFloat((state.balance + openLotsValue).toFixed(2));
-    const roiPercent = parseFloat((state.totalRealizedPnL / INITIAL_BALANCE * 100).toFixed(2));
+    const roiPercent = totalCostAll > 0
+      ? parseFloat((state.totalRealizedPnL / totalCostAll * 100).toFixed(2))
+      : 0;
     const lastActiveAt = allSells[0]?.timestamp ?? state.lots[state.lots.length - 1]?.buyTimestamp ?? new Date().toISOString();
 
     const entry: LeaderboardEntry = {

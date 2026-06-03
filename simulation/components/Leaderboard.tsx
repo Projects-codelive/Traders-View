@@ -193,19 +193,6 @@ function TraderProfile({
   const rawAlloc = entry.assetAllocation ?? {};
   const hasAlloc = Object.keys(rawAlloc).length > 0;
   const effectiveAlloc = hasAlloc ? rawAlloc : (() => {
-    const acts = entry.recentActivity ?? [];
-    const symbols: Record<string, number> = {};
-    for (const a of acts) {
-      const m = a.match(/×(\w+)/);
-      if (m) symbols[m[1]] = (symbols[m[1]] ?? 0) + 1;
-    }
-    const total = Object.values(symbols).reduce((s, v) => s + v, 0);
-    if (total > 0) {
-      for (const sym of Object.keys(symbols)) {
-        symbols[sym] = parseFloat(((symbols[sym] / total) * 100).toFixed(1));
-      }
-      return symbols;
-    }
     const top = entry.top5Trades?.[0];
     if (top) return { [top.symbol]: 100 };
     return {};

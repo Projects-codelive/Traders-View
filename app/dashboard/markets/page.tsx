@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useMarkets, FilterMode, SortMode, SectionKey, MarketStock } from "@/simulation/hooks/useMarkets";
 import MarketRow from "@/simulation/components/MarketRow";
-import { registerSymbol } from "@/simulation/engine/marketData";
+import { registerSymbol, SIM_STOCKS } from "@/simulation/engine/marketData";
+import { MAX_CUSTOM_TABS } from "@/simulation/hooks/useSymbolRegistry";
 
 const SECTION_OPTIONS: { key: SectionKey; label: string }[] = [
   { key: "FOSec",        label: "F&O Stocks"    },
@@ -38,7 +39,7 @@ export default function MarketsPage() {
   }
 
   function handleStockClick(stock: MarketStock) {
-    registerSymbol({
+    const config = {
       id:          stock.id,
       label:       stock.label !== stock.id ? stock.label : stock.id,
       yahooSymbol: stock.yahooSymbol,
@@ -50,7 +51,18 @@ export default function MarketsPage() {
       isIndex:     false,
       isPinned:    false,
       tvSymbol:    `NSE:${stock.id}`,
-    });
+    };
+    registerSymbol(config);
+    if (!SIM_STOCKS.find(s => s.id === stock.id)) {
+      try {
+        const raw = localStorage.getItem("pt_custom_symbols");
+        const existing = raw ? JSON.parse(raw) : [];
+        if (!existing.find((s: any) => s.id === stock.id)) {
+          const updated = [...existing, config].slice(-MAX_CUSTOM_TABS);
+          localStorage.setItem("pt_custom_symbols", JSON.stringify(updated));
+        }
+      } catch {}
+    }
     router.push(`/dashboard?symbol=${stock.id}`);
   }
 

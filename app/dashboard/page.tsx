@@ -11,42 +11,99 @@ import NSEChart from "@/simulation/components/NSEChart";
 import SellLotModal from "@/simulation/components/SellLotModal";
 import { TradeLot } from "@/lib/auth-types";
 
-function PriceTicker({ symbol, isSelected, onClick }: {
+function TabStock({ symbol, isSelected, hasLots, onSelect, onRemove }: {
   symbol: string;
   isSelected: boolean;
-  onClick: () => void;
+  hasLots: boolean;
+  onSelect: () => void;
+  onRemove?: () => void;
 }) {
   const tick = useRealPrice(symbol);
   const cfg = getSimStock(symbol)!;
   const isUp = tick.changePct >= 0;
+  const isLive = tick.isLive && tick.price > 0;
+
+  return (
+    <div className="relative group flex items-center gap-0 flex-shrink-0">
+      <button
+        onClick={onSelect}
+        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5 whitespace-nowrap
+          ${isSelected
+            ? cfg.isIndex ? "bg-cyan-500 text-white" : "bg-green-500 text-black"
+            : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+          }`}
+      >
+        <span className="font-semibold">{cfg.label}</span>
+        {isLive && (
+          <>
+            <span className={`text-xs font-mono ${isUp ? (isSelected ? "text-green-900" : "text-green-400") : isSelected ? "text-red-900" : "text-red-400"}`}>
+              ₹{tick.price.toFixed(2)}
+            </span>
+            <span className={`text-[10px] ${isUp ? (isSelected ? "text-green-900" : "text-green-400") : isSelected ? "text-red-900" : "text-red-400"}`}>
+              {isUp ? "▲" : "▼"}{Math.abs(tick.changePct).toFixed(2)}%
+            </span>
+          </>
+        )}
+        {!isLive && tick.price > 0 && (
+          <span className="text-xs text-gray-500">₹{tick.price.toFixed(2)}</span>
+        )}
+        {!tick.isLive && tick.error && (
+          <span className="text-xs text-gray-600">—</span>
+        )}
+      </button>
+      {hasLots && (
+        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-yellow-400 rounded-full" />
+      )}
+      {onRemove && (
+        <button
+          onClick={e => { e.stopPropagation(); onRemove(); }}
+          className="ml-1 w-5 h-5 rounded-full flex items-center justify-center text-xs
+                     text-gray-500 hover:text-red-400 hover:bg-red-400/20 transition flex-shrink-0"
+          title="Remove tab"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+function HoldingLot({ lot, onSell }: { lot: TradeLot; onSell: (lot: TradeLot) => void }) {
+  const tick = useRealPrice(lot.symbol);
+  const cp = tick.price > 0 ? tick.price : lot.buyPrice;
+  const upnl = parseFloat(((cp - lot.buyPrice) * lot.remainingQty).toFixed(2));
+  const isProfit = upnl >= 0;
+  const buyDate = new Date(lot.buyTimestamp).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  const buyTime = new Date(lot.buyTimestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div
-      onClick={onClick}
-      className={`flex justify-between items-center px-3 py-2 rounded-lg cursor-pointer transition
-        ${isSelected ? "bg-gray-700 ring-1 ring-green-500/30" : "hover:bg-gray-800"}`}
+      onClick={() => onSell(lot)}
+      className="bg-gray-800 rounded-xl p-3 cursor-pointer hover:bg-gray-700 transition group"
     >
-      <div>
-        <div className="text-sm font-medium text-white">{cfg.label}</div>
-        <div className="text-xs text-gray-500">{cfg.sector}</div>
-      </div>
-      <div className="text-right">
-        <div className={`text-xs font-mono font-semibold ${tick.isLive ? (isUp ? "text-green-400" : "text-red-400") : "text-gray-500"}`}>
-          {tick.price > 0 ? `₹${tick.price.toFixed(2)}` : "\u2014"}
+      <div className="flex justify-between items-start">
+        <div>
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-sm text-white">{lot.symbol}</span>
+            <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded font-mono">
+              {lot.remainingQty}/{lot.originalQty}
+            </span>
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5">
+            {buyDate} {buyTime} {'\u00B7'} ₹{lot.buyPrice.toFixed(2)}
+          </div>
         </div>
-        {tick.isLive && (
-          <div className={`text-xs ${isUp ? "text-green-500" : "text-red-500"}`}>
-            {isUp ? "\u25B2" : "\u25BC"}{Math.abs(tick.changePct).toFixed(2)}%
+        <div className="text-right">
+          <div className={`text-sm font-bold font-mono ${isProfit ? "text-green-400" : "text-red-400"}`}>
+            {isProfit ? "+" : ""}₹{upnl.toFixed(2)}
           </div>
-        )}
-        {tick.isLive && (
-          <div className="text-[10px] text-gray-600">
-            {new Date(tick.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          <div className={`text-xs ${isProfit ? "text-green-600" : "text-red-600"}`}>
+            {isProfit ? "▲" : "▼"}{Math.abs(((cp - lot.buyPrice) / lot.buyPrice) * 100).toFixed(2)}%
           </div>
-        )}
-        {!tick.isLive && tick.price > 0 && (
-          <div className="text-xs text-gray-600">stale</div>
-        )}
+        </div>
+      </div>
+      <div className="text-xs text-gray-600 group-hover:text-green-500 mt-1.5 transition">
+        Tap to sell from this lot {'\u2192'}
       </div>
     </div>
   );
@@ -73,8 +130,10 @@ function DashboardInner() {
     const sym = searchParams.get("symbol");
     if (!sym) return;
     const s = sym.toUpperCase();
-    setSelected(s);
-    setSymbolPriority(s);
+    if (getSimStock(s)) {
+      setSelected(s);
+      setSymbolPriority(s);
+    }
   }, []);
 
   useEffect(() => {
@@ -85,13 +144,38 @@ function DashboardInner() {
   const { activeTabs, removeSymbol, addSymbol } = useSymbolRegistry();
   const liveTick = useRealPrice(selected);
   const wallet = useSimWallet(session?.userId ?? "", session?.name ?? "");
-  const selectedStock = getSimStock(selected)!;
+  const selectedStock = getSimStock(selected) ?? getSimStock("NIFTY")!;
+
+  // Ensure URL symbol is synced into activeTabs (backup if markets page missed it)
+  useEffect(() => {
+    const sym = searchParams.get("symbol");
+    if (!sym) return;
+    const s = sym.toUpperCase();
+    if (!activeTabs.some(t => t.id === s) && getSimStock(s)) {
+      // Skip if markets page already saved it (prevents overwriting localStorage)
+      try {
+        const raw = localStorage.getItem("pt_custom_symbols");
+        const existing = raw ? JSON.parse(raw) : [];
+        if (existing.find((x: any) => x.id === s)) return;
+      } catch {}
+      const stock = getSimStock(s)!;
+      addSymbol({
+        id: stock.id,
+        label: stock.label,
+        yahooSymbol: stock.yahooSymbol,
+        sector: stock.sector,
+        isIndex: stock.isIndex,
+      });
+    }
+  }, []);
 
   if (loading || !session) return null;
 
   const holding = wallet.getOpenLots(selected);
   const isIndex = selectedStock.isIndex;
   const tradeCost = parseFloat((qty * liveTick.price).toFixed(2));
+
+  const openLotSymbols = new Set(wallet.getAllOpenLots().map(l => l.symbol));
 
   const currentPrices: Record<string, number> = {};
   activeTabs.forEach(s => {
@@ -253,42 +337,19 @@ function DashboardInner() {
 
         <div className="flex flex-col flex-1 p-4 gap-3 min-w-0">
 
-          <div className="flex gap-1.5 flex-wrap flex-shrink-0">
-            {activeTabs.map(s => (
-              <div key={s.id} className="relative group">
-                <button
-                  onClick={() => handleSymbolSelect(s.id)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1.5
-                    ${selected === s.id
-                      ? s.isIndex ? "bg-blue-600 text-white" : "bg-green-500 text-black"
-                      : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
-                    }`}
-                  style={{ paddingRight: !s.isPinned ? "1.5rem" : undefined }}
-                >
-                  {s.label}
-                  {s.isIndex && (
-                    <span className={`text-[10px] font-bold px-1 rounded uppercase
-                      ${selected === s.id ? "bg-blue-800 text-blue-200" : "bg-gray-800 text-blue-400"}`}>
-                      INDEX
-                    </span>
-                  )}
-                </button>
-                {!s.isPinned && (
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      removeSymbol(s.id);
-                      if (selected === s.id) handleSymbolSelect("WIPRO");
-                    }}
-                    className="absolute right-1 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full
-                               flex items-center justify-center text-gray-600 hover:text-red-400
-                               hover:bg-red-400/10 transition opacity-0 group-hover:opacity-100"
-                    title="Remove tab"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
+          <div className="flex gap-1.5 overflow-x-auto flex-shrink-0 pb-1" style={{ scrollbarWidth: "thin", scrollbarColor: "#374151 transparent" }}>
+            {[
+              ...activeTabs.filter(t => openLotSymbols.has(t.id)),
+              ...activeTabs.filter(t => !openLotSymbols.has(t.id)),
+            ].map(s => (
+              <TabStock
+                key={s.id}
+                symbol={s.id}
+                isSelected={selected === s.id}
+                hasLots={openLotSymbols.has(s.id)}
+                onSelect={() => handleSymbolSelect(s.id)}
+                onRemove={!s.isPinned ? () => { removeSymbol(s.id); if (selected === s.id) handleSymbolSelect("WIPRO"); } : undefined}
+              />
             ))}
           </div>
 
@@ -400,20 +461,6 @@ function DashboardInner() {
         <aside className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col overflow-y-auto flex-shrink-0">
 
           <div className="p-4 border-b border-gray-800">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Live Prices</h2>
-            <div className="space-y-1">
-              {activeTabs.map(s => (
-                <PriceTicker
-                  key={s.id}
-                  symbol={s.id}
-                  isSelected={selected === s.id}
-                  onClick={() => handleSymbolSelect(s.id)}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="p-4 border-b border-gray-800">
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Holdings (by lot)</h2>
               <span className="text-xs text-gray-600">{wallet.getAllOpenLots().length} lots</span>
@@ -423,54 +470,13 @@ function DashboardInner() {
               <p className="text-gray-600 text-sm">No open positions.</p>
             ) : (
               <div className="space-y-2">
-                {wallet.getAllOpenLots().map(lot => {
-                  const cp = lot.symbol === selected && liveTick.isLive
-                    ? liveTick.price
-                    : lot.buyPrice;
-                  const upnl = wallet.getUnrealizedPnLForLot(lot, cp);
-                  const isProfit = upnl >= 0;
-                  const buyDate = new Date(lot.buyTimestamp).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-                  const buyTime = new Date(lot.buyTimestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-
-                  return (
-                    <div
-                      key={lot.lotId}
-                      onClick={() => { handleSymbolSelect(lot.symbol); setInitialSellLot(lot); setIsSellModalOpen(true); }}
-                      className="bg-gray-800 rounded-xl p-3 cursor-pointer hover:bg-gray-700 transition group"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-sm text-white">{lot.symbol}</span>
-                            <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded font-mono">
-                              {lot.remainingQty}/{lot.originalQty}
-                            </span>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            {buyDate} {buyTime} {'\u00B7'} ₹{lot.buyPrice.toFixed(2)}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          {lot.symbol === selected && liveTick.isLive ? (
-                            <>
-                              <div className={`text-sm font-bold font-mono ${isProfit ? "text-green-400" : "text-red-400"}`}>
-                                {isProfit ? "+" : ""}₹{upnl.toFixed(2)}
-                              </div>
-                              <div className={`text-xs ${isProfit ? "text-green-600" : "text-red-600"}`}>
-                                {isProfit ? "\u25B2" : "\u25BC"}{Math.abs(((cp - lot.buyPrice) / lot.buyPrice) * 100).toFixed(2)}%
-                              </div>
-                            </>
-                          ) : (
-                            <div className="text-xs text-gray-600">select to see P&L</div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-600 group-hover:text-green-500 mt-1.5 transition">
-                        Tap to sell from this lot {'\u2192'}
-                      </div>
-                    </div>
-                  );
-                })}
+                {wallet.getAllOpenLots().map(lot => (
+                  <HoldingLot
+                    key={lot.lotId}
+                    lot={lot}
+                    onSell={lot => { handleSymbolSelect(lot.symbol); setInitialSellLot(lot); setIsSellModalOpen(true); }}
+                  />
+                ))}
               </div>
             )}
           </div>

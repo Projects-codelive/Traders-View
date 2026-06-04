@@ -90,7 +90,7 @@ export function setSymbolPriority(activeSymbol: string) {
       const delay = (i + 1) * 3000;
       const t = setTimeout(() => {
         doFetch(s.id);
-        const bgTimer = setInterval(() => doFetch(s.id), 10000);
+        const bgTimer = setInterval(() => doFetch(s.id), 2000);
         activeTimers.set(s.id, bgTimer);
       }, delay);
       activeTimers.set(`_delay_${s.id}`, t as any);

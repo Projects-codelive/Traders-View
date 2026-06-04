@@ -116,8 +116,17 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       };
     }
 
-    case "RESET":
-      return { ...INITIAL_STATE };
+    case "RESET": {
+      const openLotsValue = state.lots
+        .filter(l => !l.isClosed)
+        .reduce((sum, l) => sum + l.remainingQty * l.buyPrice, 0);
+      const snapshot = parseFloat((INITIAL_BALANCE + openLotsValue).toFixed(2));
+      const newCurve = [
+        ...state.equityCurve,
+        { time: Date.now(), value: snapshot }
+      ].slice(-200);
+      return { ...state, balance: INITIAL_BALANCE, equityCurve: newCurve };
+    }
 
     case "HYDRATE": {
       const hydrated = { ...INITIAL_STATE, ...action.payload, equityCurve: action.payload.equityCurve ?? [] };

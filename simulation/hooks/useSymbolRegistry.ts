@@ -6,7 +6,7 @@ import {
 } from "../engine/marketData";
 
 const CUSTOM_SYMBOLS_KEY = "pt_custom_symbols";
-const MAX_CUSTOM_TABS = 5;
+export const MAX_CUSTOM_TABS = 20;
 
 export function useSymbolRegistry() {
   const [customSymbols, setCustomSymbols] = useState<StockConfig[]>([]);

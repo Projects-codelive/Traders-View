@@ -29,7 +29,7 @@ export function useMarkets(filter: FilterMode, section: SectionKey) {
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState<string | null>(null);
   const [lastFetch,     setLastFetch]     = useState<Date | null>(null);
-  const [countdown,     setCountdown]     = useState(45);
+  const [countdown,     setCountdown]     = useState(10);
   const [gainersCount,  setGainersCount]  = useState(0);
   const [losersCount,   setLosersCount]   = useState(0);
   const prevPrices = useRef<Record<string, number>>({});
@@ -58,7 +58,7 @@ export function useMarkets(filter: FilterMode, section: SectionKey) {
       setStocks(withFlash);
       setLastFetch(new Date());
       setError(null);
-      setCountdown(45);
+      setCountdown(10);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -68,10 +68,10 @@ export function useMarkets(filter: FilterMode, section: SectionKey) {
 
   useEffect(() => {
     fetchMarkets();
-    timerRef.current = setInterval(fetchMarkets, 45000);
+    timerRef.current = setInterval(fetchMarkets, 10000);
 
     countRef.current = setInterval(() => {
-      setCountdown(p => p <= 1 ? 45 : p - 1);
+      setCountdown(p => p <= 1 ? 10 : p - 1);
     }, 1000);
 
     return () => {

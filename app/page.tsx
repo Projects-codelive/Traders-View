@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { loginUser, saveSession } from "@/lib/auth";
+import { saveSession } from "@/lib/auth";
 import { validateEmail, validatePassword } from "@/lib/validators";
 import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
@@ -33,18 +33,16 @@ export default function LoginPage() {
     ev.preventDefault();
     if (!validate()) return;
     setSubmitting(true);
-    const result = loginUser(email, password);
-    if (result.success) {
-      saveSession(result.user);
-      refresh();
-      try {
-        await axios.post("/api/auth/login", { email, password });
-      } catch {
-        // MongoDB sync is optional — app works with localStorage alone
+    try {
+      const res = await axios.post("/api/auth/login", { email, password });
+      if (res.data.success) {
+        saveSession(res.data.user);
+        refresh();
+        router.push("/dashboard");
       }
-      router.push("/dashboard");
-    } else {
-      setErrors({ form: result.error });
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || "Login failed. Please try again.";
+      setErrors({ form: msg });
     }
     setSubmitting(false);
   }

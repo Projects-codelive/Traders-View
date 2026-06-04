@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { registerUser, saveSession } from "@/lib/auth";
+import { saveSession } from "@/lib/auth";
 import {
   validateName, validatePhone, validateDOB,
   validateEmail, validatePassword, getPasswordStrength,
@@ -65,33 +65,23 @@ export default function RegisterPage() {
     if (!validate()) return;
     setSubmitting(true);
 
-    const result = registerUser({
-      name: form.name,
-      gender: form.gender as "male" | "female" | "other",
-      phone: form.phone,
-      dob: form.dob,
-      email: form.email,
-      password: form.password,
-    });
-
-    if (result.success) {
-      saveSession(result.user);
-      refresh();
-      try {
-        await axios.post("/api/auth/register", {
-          name: form.name,
-          gender: form.gender,
-          phone: form.phone,
-          dob: form.dob,
-          email: form.email,
-          password: form.password,
-        });
-      } catch {
-        // MongoDB sync is optional — app works with localStorage alone
+    try {
+      const res = await axios.post("/api/auth/register", {
+        name: form.name,
+        gender: form.gender,
+        phone: form.phone,
+        dob: form.dob,
+        email: form.email,
+        password: form.password,
+      });
+      if (res.data.success) {
+        saveSession(res.data.user);
+        refresh();
+        router.push("/dashboard");
       }
-      router.push("/dashboard");
-    } else {
-      setErrors({ form: result.error });
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || "Registration failed. Please try again.";
+      setErrors({ form: msg });
     }
     setSubmitting(false);
   }

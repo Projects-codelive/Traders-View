@@ -54,8 +54,11 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
 
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-green-400">📈 Traders View</h1>
-          <p className="text-gray-400 mt-2 text-sm">Practice trading with ₹10,000 virtual money</p>
+          <h1 className="text-3xl font-bold text-green-400 flex items-center justify-center gap-3">
+            <img src="/logo3.png" alt="Play" className="w-50 rounded-lg" />
+            {/* Play */}
+          </h1>
+          <p className="text-gray-400 mt-2 text-sm">Practice trading with ₹100,000 virtual money</p>
         </div>
 
         <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 shadow-2xl">

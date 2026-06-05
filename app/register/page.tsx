@@ -93,8 +93,11 @@ export default function RegisterPage() {
       <div className="w-full max-w-lg">
 
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-green-400">📈 Traders View</h1>
-          <p className="text-gray-400 mt-2 text-sm">Create your free account — start with ₹10,000 virtual balance</p>
+          <h1 className="text-3xl font-bold text-green-400 flex items-center justify-center gap-3">
+            <img src="/logo3.png" alt="Play" className="w-50 rounded-lg" />
+            {/* Play */}
+          </h1>
+          <p className="text-gray-400 mt-2 text-sm">Create your free account — start with ₹100,000 virtual balance</p>
         </div>
 
         <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 shadow-2xl">
@@ -247,7 +250,7 @@ export default function RegisterPage() {
               disabled={submitting}
               className="w-full bg-green-600 hover:bg-green-500 disabled:opacity-60 text-white font-semibold py-2.5 rounded-lg transition text-sm mt-2"
             >
-              {submitting ? "Creating account…" : "Create Account — Get ₹10,000 Free"}
+              {submitting ? "Creating account…" : "Create Account — Get ₹100,000 Free"}
             </button>
           </form>
 

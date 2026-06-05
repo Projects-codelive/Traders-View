@@ -10,8 +10,9 @@ const lato = Lato({
 });
 
 export const metadata: Metadata = {
-  title: "Paper Trader",
-  description: "Demo trading dashboard",
+  title: "Play",
+  description: "Virtual trading platform",
+  icons: [{ rel: "icon", url: "/favicon.svg" }],
 };
 
 export default function RootLayout({

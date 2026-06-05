@@ -228,10 +228,17 @@ function DashboardInner() {
     if (!liveTick.isLive) return;
     const buyPrice = liveTick.inrPrice;
     const ok = wallet.buy(selected, qty, buyPrice);
+    const totalCost = (qty * buyPrice).toFixed(2);
     const isCryptoStock = selectedStock.currency === "USD";
+    let pricePart: string;
+    if (isCryptoStock) {
+      pricePart = "$" + liveTick.price.toFixed(2) + " (\u20B9" + buyPrice.toFixed(2) + ")";
+    } else {
+      pricePart = "\u20B9" + buyPrice.toFixed(2);
+    }
     setTradeMsg(ok
-      ? { text: `\u2705 New lot: ${qty} \u00D7 ${selected} @ ${isCryptoStock ? `$${liveTick.price.toFixed(2)} (\u20B9${buyPrice.toFixed(2)})` : `\u20B9${buyPrice.toFixed(2)}`} | Cost \u20B9${(qty * buyPrice).toFixed(2)}`, ok: true }
-      : { text: `\u274C ${wallet.lastError}`, ok: false }
+      ? { text: "\u2705 New lot: " + qty + " \u00D7 " + selected + " @ " + pricePart + " | Cost \u20B9" + totalCost, ok: true }
+      : { text: "\u274C " + wallet.lastError, ok: false }
     );
     setTimeout(() => { setTradeMsg(null); wallet.clearError(); }, 4000);
   }
@@ -262,13 +269,20 @@ function DashboardInner() {
     const ok = wallet.sellLot(lotId, qtySold, sellPrice);
     if (ok && lot) {
       const pnl = (sellPrice - lot.buyPrice) * qtySold;
+      const pnlStr = (pnl >= 0 ? "+" : "") + "\u20B9" + pnl.toFixed(2);
       const isCryptoStock = selectedStock.currency === "USD";
+      let pricePart: string;
+      if (isCryptoStock) {
+        pricePart = "$" + liveTick.price.toFixed(2) + " (\u20B9" + sellPrice.toFixed(2) + ")";
+      } else {
+        pricePart = "\u20B9" + sellPrice.toFixed(2);
+      }
       setTradeMsg({
-        text: `\u2705 Sold ${qtySold} \u00D7 ${selected} @ ${isCryptoStock ? `$${liveTick.price.toFixed(2)} (\u20B9${sellPrice.toFixed(2)})` : `\u20B9${sellPrice.toFixed(2)}`} | P&L: ${pnl >= 0 ? "+" : ""}\u20B9${pnl.toFixed(2)}`,
+        text: "\u2705 Sold " + qtySold + " \u00D7 " + selected + " @ " + pricePart + " | P&L: " + pnlStr,
         ok: pnl >= 0,
       });
     } else {
-      setTradeMsg({ text: `\u274C ${wallet.lastError}`, ok: false });
+      setTradeMsg({ text: "\u274C " + wallet.lastError, ok: false });
     }
     setTimeout(() => { setTradeMsg(null); wallet.clearError(); }, 4000);
   }
@@ -291,7 +305,7 @@ function DashboardInner() {
       <header className="flex items-center justify-between px-6 py-3 bg-gray-900 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-bold text-green-400 flex-shrink-0 flex items-center gap-2">
-            <img src="/logo3.png" alt="Play" className="w-28 h-14 rounded" />
+            <img src="/logo3.png" alt="Play" className="w-32 h-16 rounded" />
             {/* Play */}
           </h1>
           <SymbolSearch onSelect={handleSearchSelect} />
@@ -401,7 +415,7 @@ function DashboardInner() {
                       : "\u2014"}
                   </span>
                   {usdLocale && liveTick.inrPrice > 0 && (
-                    <span className="text-sm font-mono text-gray-500">(\u20B9{liveTick.inrPrice.toFixed(2)})</span>
+                    <span className="text-sm font-mono text-gray-500">{`(\u20B9${liveTick.inrPrice.toFixed(2)})`}</span>
                   )}
                   {liveTick.isLive && liveTick.price > 0 && (
                     <span className={`text-sm font-medium ${isUp ? "text-green-400" : "text-red-400"}`}>
@@ -449,11 +463,11 @@ function DashboardInner() {
                   />
                 </div>
                 {liveTick.price > 0 && (
-                  <span className="text-gray-400 text-sm font-mono">= {csym}{tradeCost.toFixed(2)}</span>
+                  <span className="text-gray-400 text-sm font-mono">= {`\u20B9`}{tradeCost.toFixed(2)}</span>
                 )}
                 <span className={`text-xs ${tradeCost > wallet.state.balance ? "text-red-400" : "text-gray-600"}`}>
                   {tradeCost > wallet.state.balance
-                    ? `\u26A0 Need ${csym}${(tradeCost - wallet.state.balance).toFixed(2)} more`
+                    ? `\u26A0 Need \u20B9${(tradeCost - wallet.state.balance).toFixed(2)} more`
                     : `Balance: \u20B9${wallet.state.balance.toFixed(2)}`
                   }
                 </span>
@@ -525,7 +539,7 @@ function DashboardInner() {
                     </div>
                     <div className="flex justify-between text-gray-400 mt-0.5">
                       <span>@{scsym}{t.sellPrice.toFixed(2)}</span>
-                      <span className={`font-bold ${t.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      <span className={`font-bold ${t.pnl >= 0 ? "text-green-400" : "text-red-400"}`}> 
                         {t.pnl >= 0 ? "+" : ""}{scsym}{t.pnl.toFixed(2)}
                       </span>
                     </div>

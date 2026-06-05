@@ -11,6 +11,7 @@ import {
   IChartApi,
   ISeriesApi,
   Time,
+  TickMarkType,
 } from "lightweight-charts";
 
 interface Candle {
@@ -52,11 +53,31 @@ export default function NSEChart({ symbol, livePrice, isLive }: Props) {
 
   const lastCandleRef  = useRef<Candle | null>(null);
 
-  const [timeframe,   setTimeframe]  = useState("1m");
-  const [loading,     setLoading]    = useState(true);
-  const [error,       setError]      = useState<string | null>(null);
-  const [ohlcv,       setOhlcv]      = useState<OHLCVDisplay | null>(null);
-  const [candleData,  setCandleData] = useState<Candle[]>([]);
+  const [timeframe,      setTimeframe]  = useState("1m");
+  const [loading,        setLoading]    = useState(true);
+  const [error,          setError]      = useState<string | null>(null);
+  const [ohlcv,          setOhlcv]      = useState<OHLCVDisplay | null>(null);
+  const [candleData,     setCandleData] = useState<Candle[]>([]);
+  const gmtoffsetRef = useRef(0);
+
+  function fmtTime(timestamp: number, tickMarkType: TickMarkType): string {
+    const d = new Date((timestamp + gmtoffsetRef.current) * 1000);
+    switch (tickMarkType) {
+      case TickMarkType.Year:
+        return String(d.getUTCFullYear());
+      case TickMarkType.Month: {
+        const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        return months[d.getUTCMonth()] + " " + d.getUTCFullYear();
+      }
+      case TickMarkType.DayOfMonth:
+        return d.getUTCDate() + " " + ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getUTCMonth()];
+      default: {
+        const hh = d.getUTCHours().toString().padStart(2, "0");
+        const mm = d.getUTCMinutes().toString().padStart(2, "0");
+        return `${hh}:${mm}`;
+      }
+    }
+  }
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -71,6 +92,19 @@ export default function NSEChart({ symbol, livePrice, isLive }: Props) {
       grid: {
         vertLines: { color: "#1a1f2e", style: LineStyle.Dotted },
         horzLines: { color: "#1a1f2e", style: LineStyle.Dotted },
+      },
+      localization: {
+        timeFormatter: (time: unknown) => {
+          const t = typeof time === "number" ? time : Number(time);
+          if (isNaN(t)) return String(time);
+          const d = new Date((t + gmtoffsetRef.current) * 1000);
+          const dd = String(d.getUTCDate()).padStart(2, "0");
+          const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+          const hh = d.getUTCHours().toString().padStart(2, "0");
+          const mi = d.getUTCMinutes().toString().padStart(2, "0");
+          return `${dd} ${months[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(-2)} ${hh}:${mi}`;
+        },
+        dateFormat: "dd MMM 'yy",
       },
       crosshair: {
         mode: CrosshairMode.Normal,
@@ -98,6 +132,7 @@ export default function NSEChart({ symbol, livePrice, isLive }: Props) {
         secondsVisible: false,
         fixLeftEdge:    true,
         fixRightEdge:   true,
+        tickMarkFormatter: (time: number, tickMarkType: TickMarkType) => fmtTime(time, tickMarkType),
       },
       width:  containerRef.current.clientWidth,
       height: containerRef.current.clientHeight,
@@ -180,6 +215,8 @@ export default function NSEChart({ symbol, livePrice, isLive }: Props) {
         setLoading(false);
         return;
       }
+
+      gmtoffsetRef.current = data.gmtoffset ?? 0;
 
       const candles: Candle[] = data.candles;
       setCandleData(candles);

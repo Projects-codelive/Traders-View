@@ -59,6 +59,8 @@ export async function GET(req: NextRequest) {
     const timestamps: number[] = result.timestamp ?? [];
     const quote = result.indicators?.quote?.[0] ?? {};
 
+    const gmtoffset = result.meta?.gmtoffset ?? 0;
+
     const candles = timestamps
       .map((t, i) => ({
         time:   t,
@@ -71,7 +73,7 @@ export async function GET(req: NextRequest) {
       .filter(c => c.close > 0)
       .sort((a, b) => a.time - b.time);
 
-    return NextResponse.json({ symbol: symbol.toUpperCase(), interval, candles });
+    return NextResponse.json({ symbol: symbol.toUpperCase(), interval, candles, gmtoffset });
   } catch (err: any) {
     return NextResponse.json({ error: `Candle fetch failed: ${err.message}`, candles: [] }, { status: 500 });
   }

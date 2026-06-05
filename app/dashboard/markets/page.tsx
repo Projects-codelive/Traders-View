@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { useMarkets, FilterMode, SortMode, SectionKey, MarketStock } from "@/simulation/hooks/useMarkets";
+import { useMarkets, FilterMode, SortMode, SectionKey, MarketStock, MarketType } from "@/simulation/hooks/useMarkets";
 import MarketRow from "@/simulation/components/MarketRow";
 import { registerSymbol, SIM_STOCKS } from "@/simulation/engine/marketData";
 import { MAX_CUSTOM_TABS } from "@/simulation/hooks/useSymbolRegistry";
@@ -19,14 +19,16 @@ export default function MarketsPage() {
   const router = useRouter();
   const { session, loading } = useAuth();
 
+  const [marketType, setMarketType] = useState<MarketType>("indian");
   const [filter,  setFilter]  = useState<FilterMode>("all");
   const [section, setSection] = useState<SectionKey>("FOSec");
   const [sort,    setSort]    = useState<SortMode>("changePct");
 
-  const { loading: mLoading, error, lastFetch, countdown, fetchMarkets, getFiltered, gainersCount, losersCount } = useMarkets(filter, section);
+  const { loading: mLoading, error, lastFetch, countdown, fetchMarkets, getFiltered, gainersCount, losersCount } = useMarkets(filter, section, marketType);
 
   if (loading || !session) return null;
 
+  const isCrypto = marketType === "crypto";
   const displayList = getFiltered(sort);
   const topGainer   = [...displayList].sort((a, b) => b.changePct - a.changePct)[0];
 
@@ -38,7 +40,14 @@ export default function MarketsPage() {
     setSection(e.target.value as SectionKey);
   }
 
+  function handleMarketTypeChange(t: MarketType) {
+    setMarketType(t);
+    setFilter("all");
+    setSort("changePct");
+  }
+
   function handleStockClick(stock: MarketStock) {
+    const usd = stock.currency === "USD";
     const config = {
       id:          stock.id,
       label:       stock.label !== stock.id ? stock.label : stock.id,
@@ -46,11 +55,12 @@ export default function MarketsPage() {
       basePrice:   stock.price,
       volatility:  0.015,
       drift:       0.00005,
-      sector:      "NSE",
+      sector:      usd ? "Crypto" : "NSE",
       lotSize:     1,
       isIndex:     false,
       isPinned:    false,
-      tvSymbol:    `NSE:${stock.id}`,
+      tvSymbol:    usd ? `COINBASE:${stock.id}` : `NSE:${stock.id}`,
+      currency:    stock.currency ?? (usd ? "USD" : "INR"),
     };
     registerSymbol(config);
     if (!SIM_STOCKS.find(s => s.id === stock.id)) {
@@ -88,16 +98,45 @@ export default function MarketsPage() {
             {"\u2190"} Dashboard
           </button>
           <span className="text-gray-800">|</span>
-          <h1 className="text-base font-bold" style={{ color: "#00d4aa" }}>{"\uD83C\uDDEE\uD83C\uDDF3"} Indian Markets</h1>
+          <h1 className="text-base font-bold" style={{ color: "#00d4aa" }}>
+            {isCrypto ? "\uD83D\uDCC8" : "\uD83C\uDDEE\uD83C\uDDF3"} {isCrypto ? "Crypto Markets" : "Indian Markets"}
+          </h1>
           <span
             className="text-xs px-2 py-0.5 rounded-full font-medium"
-            style={{ background: "#00d4aa18", color: "#00d4aa", border: "1px solid #00d4aa33" }}
+            style={{ background: isCrypto ? "#f7931a20" : "#00d4aa18", color: isCrypto ? "#f7931a" : "#00d4aa", border: `1px solid ${isCrypto ? "#f7931a44" : "#00d4aa33"}` }}
           >
-            NSE LIVE
+            {isCrypto ? "CoinGecko" : "NSE LIVE"}
           </span>
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Market type toggle */}
+          <div
+            className="flex items-center gap-1 rounded-lg p-0.5"
+            style={{ background: "#0f1521", border: "1px solid #1f2937" }}
+          >
+            <button
+              onClick={() => handleMarketTypeChange("indian")}
+              className="px-3 py-1.5 rounded-md text-xs font-medium transition"
+              style={{
+                background: !isCrypto ? "#1f2937" : "transparent",
+                color: !isCrypto ? "#fff" : "#6b7280",
+              }}
+            >
+              {"\uD83C\uDDEE\uD83C\uDDF3"} Indian
+            </button>
+            <button
+              onClick={() => handleMarketTypeChange("crypto")}
+              className="px-3 py-1.5 rounded-md text-xs font-medium transition"
+              style={{
+                background: isCrypto ? "#1f2937" : "transparent",
+                color: isCrypto ? "#fff" : "#6b7280",
+              }}
+            >
+              {"\uD83D\uDCC8"} Crypto
+            </button>
+          </div>
+
           <div
             className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg"
             style={{ background: "#0f1521", border: "1px solid #1f2937" }}
@@ -116,7 +155,7 @@ export default function MarketsPage() {
 
           {lastFetch && (
             <span className="text-xs text-gray-600">
-              Updated {lastFetch.toLocaleTimeString("en-IN")}
+              Updated {lastFetch.toLocaleTimeString(isCrypto ? "en-US" : "en-IN")}
             </span>
           )}
 
@@ -137,29 +176,15 @@ export default function MarketsPage() {
 
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="grid grid-cols-3 gap-4 mb-6">
-          {[
-            {
-              label: "NSE Stocks Tracked",
-              value: displayList.length.toString(),
-              sub:   section === "FOSec"  ? "F&O Universe" :
-                     section === "allSec" ? "All NSE" :
-                     section === "NIFTY"  ? "Nifty 50" :
-                     section === "NIFTYNEXT50" ? "Nifty Next 50" : "Bank Nifty",
-              color: "#00d4aa",
-            },
-            {
-              label: "Top Gainer Today",
-              value: topGainer ? `${topGainer.id} +${topGainer.changePct.toFixed(2)}%` : "\u2014",
-              sub:   topGainer ? `\u20B9${topGainer.price.toFixed(2)}` : "Loading\u2026",
-              color: "#00d4aa",
-            },
-            {
-              label: "Market Sentiment",
-              value: `${gainersCount}\u2191  ${losersCount}\u2193`,
-              sub:   gainersCount > losersCount ? "Bullish \uD83D\uDCC8" : losersCount > gainersCount ? "Bearish \uD83D\uDCC9" : "Neutral",
-              color: gainersCount > losersCount ? "#00d4aa" : "#ef5350",
-            },
-          ].map(card => (
+          {(isCrypto ? [
+            { label: "Cryptocurrencies Tracked",  value: displayList.length.toString(), sub: "Top 100 by Market Cap",                                                                      color: "#f7931a" },
+            { label: "Top Gainer (24h)",           value: topGainer ? `${topGainer.id} +${topGainer.changePct.toFixed(2)}%` : "\u2014",                                                      sub: topGainer ? `$${topGainer.price.toFixed(2)}` : "Loading\u2026", color: "#f7931a" },
+            { label: "Market Sentiment",           value: `${gainersCount}\u2191  ${losersCount}\u2193`,                                                                                     sub: gainersCount > losersCount ? "Bullish \uD83D\uDCC8" : losersCount > gainersCount ? "Bearish \uD83D\uDCC9" : "Neutral", color: gainersCount > losersCount ? "#00d4aa" : "#ef5350" },
+          ] : [
+            { label: "NSE Stocks Tracked",         value: displayList.length.toString(), sub: section === "FOSec" ? "F&O Universe" : section === "allSec" ? "All NSE" : section === "NIFTY" ? "Nifty 50" : section === "NIFTYNEXT50" ? "Nifty Next 50" : "Bank Nifty", color: "#00d4aa" },
+            { label: "Top Gainer Today",           value: topGainer ? `${topGainer.id} +${topGainer.changePct.toFixed(2)}%` : "\u2014",                                                      sub: topGainer ? `\u20B9${topGainer.price.toFixed(2)}` : "Loading\u2026", color: "#00d4aa" },
+            { label: "Market Sentiment",           value: `${gainersCount}\u2191  ${losersCount}\u2193`,                                                                                     sub: gainersCount > losersCount ? "Bullish \uD83D\uDCC8" : losersCount > gainersCount ? "Bearish \uD83D\uDCC9" : "Neutral", color: gainersCount > losersCount ? "#00d4aa" : "#ef5350" },
+          ]).map(card => (
             <div
               key={card.label}
               className="rounded-xl px-5 py-4"
@@ -202,20 +227,22 @@ export default function MarketsPage() {
           </div>
 
           <div className="flex items-center gap-3 text-xs text-gray-500">
-            {/* Index / Section selector */}
-            <span>Index:</span>
-            <select
-              value={section}
-              onChange={handleSectionChange}
-              className="rounded-lg px-2 py-1.5 text-xs text-gray-300 outline-none cursor-pointer"
-              style={{ background: "#0f1521", border: "1px solid #1f2937" }}
-            >
-              {SECTION_OPTIONS.map(opt => (
-                <option key={opt.key} value={opt.key}>{opt.label}</option>
-              ))}
-            </select>
-
-            <span className="text-gray-700">|</span>
+            {!isCrypto && (
+              <>
+                <span>Index:</span>
+                <select
+                  value={section}
+                  onChange={handleSectionChange}
+                  className="rounded-lg px-2 py-1.5 text-xs text-gray-300 outline-none cursor-pointer"
+                  style={{ background: "#0f1521", border: "1px solid #1f2937" }}
+                >
+                  {SECTION_OPTIONS.map(opt => (
+                    <option key={opt.key} value={opt.key}>{opt.label}</option>
+                  ))}
+                </select>
+                <span className="text-gray-700">|</span>
+              </>
+            )}
             <span>Sort by:</span>
             <select
               value={sort}
@@ -223,14 +250,26 @@ export default function MarketsPage() {
               className="rounded-lg px-2 py-1.5 text-xs text-gray-300 outline-none cursor-pointer"
               style={{ background: "#0f1521", border: "1px solid #1f2937" }}
             >
-              <option value="changePct">Day Change %</option>
-              <option value="volume">Volume</option>
-              <option value="marketCap">Market Cap</option>
-              <option value="price">Price</option>
+              {isCrypto ? (
+                <>
+                  <option value="changePct">24h Change %</option>
+                  <option value="volume">Volume (24h)</option>
+                  <option value="marketCap">Market Cap</option>
+                  <option value="price">Price</option>
+                </>
+              ) : (
+                <>
+                  <option value="changePct">Day Change %</option>
+                  <option value="volume">Volume</option>
+                  <option value="marketCap">Market Cap</option>
+                  <option value="price">Price</option>
+                </>
+              )}
             </select>
           </div>
         </div>
 
+        {/* Column headers */}
         <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #1f2937" }}>
           <div
             className="grid px-5 py-3 text-xs font-medium uppercase tracking-wider text-gray-600"
@@ -241,10 +280,10 @@ export default function MarketsPage() {
             }}
           >
             <span>#</span>
-            <span>Company</span>
-            <span className="text-right">LTP</span>
-            <span className="text-right">Day Change</span>
-            <span className="text-right">Volume</span>
+            <span>{isCrypto ? "Coin" : "Company"}</span>
+            <span className="text-right">{isCrypto ? "Price" : "LTP"}</span>
+            <span className="text-right">{isCrypto ? "24h Change" : "Day Change"}</span>
+            <span className="text-right">{isCrypto ? "Vol (24h)" : "Volume"}</span>
             <span className="text-right">Mkt Cap</span>
             <span className="pl-2">Day Range</span>
           </div>
@@ -255,8 +294,12 @@ export default function MarketsPage() {
               style={{ background: "#0a0e17" }}
             >
               <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
-              <div className="text-gray-500 text-sm">Fetching NSE market data\u2026</div>
-              <div className="text-gray-700 text-xs">This may take 5\u201310 seconds</div>
+              <div className="text-gray-500 text-sm">
+                {isCrypto ? "Fetching crypto data\u2026" : "Fetching NSE market data\u2026"}
+              </div>
+              <div className="text-gray-700 text-xs">
+                {isCrypto ? "Loading from CoinGecko" : "This may take 5\u201310 seconds"}
+              </div>
             </div>
           )}
 
@@ -286,14 +329,14 @@ export default function MarketsPage() {
 
           {!mLoading && !error && displayList.length === 0 && (
             <div className="text-center py-16 text-gray-600 text-sm" style={{ background: "#0a0e17" }}>
-              No stocks match the current filter.
+              No results match the current filter.
             </div>
           )}
         </div>
 
         <p className="text-center text-gray-700 text-xs mt-4">
-          Click any stock to open its live chart on the dashboard with full buy/sell functionality.
-          Data sourced from NSE.
+          Click any {isCrypto ? "cryptocurrency" : "stock"} to open its live chart on the dashboard with full buy/sell functionality.
+          Data sourced from {isCrypto ? "CoinGecko" : "NSE"}.
         </p>
       </div>
     </div>

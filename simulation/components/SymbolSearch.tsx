@@ -77,7 +77,7 @@ export default function SymbolSearch({ onSelect }: Props) {
           value={query}
           onChange={e => setQuery(e.target.value)}
           onFocus={() => { if (results.length > 0) setOpen(true); }}
-          placeholder="Search NSE stocks..."
+          placeholder="Search stocks & crypto..."
           className="bg-transparent outline-none text-sm text-gray-300 placeholder-gray-600 w-full"
           style={{ fontFamily: "DM Mono, monospace" }}
         />
@@ -126,7 +126,7 @@ export default function SymbolSearch({ onSelect }: Props) {
           className="absolute top-full left-0 mt-1 w-full rounded-xl px-4 py-3 text-sm text-gray-600 z-50"
           style={{ background: "#0d1117", border: "1px solid #1f2937" }}
         >
-          No NSE results for "{query}"
+          No results for "{query}"
         </div>
       )}
     </div>

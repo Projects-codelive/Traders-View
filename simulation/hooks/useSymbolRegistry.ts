@@ -31,6 +31,7 @@ export function useSymbolRegistry() {
     if (SIM_STOCKS.find(d => d.id === config.id)) return;
     if (customSymbols.find(c => c.id === config.id)) return;
 
+    const isCrypto = config.sector === "Crypto";
     const full: StockConfig = {
       ...config,
       basePrice:   0,
@@ -38,7 +39,8 @@ export function useSymbolRegistry() {
       drift:       0.00005,
       lotSize:     1,
       isPinned:    false,
-      tvSymbol:    config.isIndex ? `NSE:${config.id}` : `NSE:${config.id}`,
+      tvSymbol:    isCrypto ? config.yahooSymbol : `NSE:${config.id}`,
+      currency:    isCrypto ? "USD" : "INR",
     };
 
     registerSymbol(full);

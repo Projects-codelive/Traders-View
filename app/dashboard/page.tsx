@@ -11,6 +11,10 @@ import NSEChart from "@/simulation/components/NSEChart";
 import SellLotModal from "@/simulation/components/SellLotModal";
 import { TradeLot } from "@/lib/auth-types";
 
+function currencySym(cfg: { currency?: string }): string {
+  return cfg.currency === "USD" ? "$" : "\u20B9";
+}
+
 function TabStock({ symbol, isSelected, hasLots, onSelect, onRemove }: {
   symbol: string;
   isSelected: boolean;
@@ -22,6 +26,7 @@ function TabStock({ symbol, isSelected, hasLots, onSelect, onRemove }: {
   const cfg = getSimStock(symbol)!;
   const isUp = tick.changePct >= 0;
   const isLive = tick.isLive && tick.price > 0;
+  const csym = currencySym(cfg);
 
   return (
     <div className="relative group flex items-center gap-0 flex-shrink-0">
@@ -37,7 +42,7 @@ function TabStock({ symbol, isSelected, hasLots, onSelect, onRemove }: {
         {isLive && (
           <>
             <span className={`text-xs font-mono ${isUp ? (isSelected ? "text-green-900" : "text-green-400") : isSelected ? "text-red-900" : "text-red-400"}`}>
-              ₹{tick.price.toFixed(2)}
+              {csym}{tick.price.toFixed(2)}
             </span>
             <span className={`text-[10px] ${isUp ? (isSelected ? "text-green-900" : "text-green-400") : isSelected ? "text-red-900" : "text-red-400"}`}>
               {isUp ? "▲" : "▼"}{Math.abs(tick.changePct).toFixed(2)}%
@@ -45,7 +50,7 @@ function TabStock({ symbol, isSelected, hasLots, onSelect, onRemove }: {
           </>
         )}
         {!isLive && tick.price > 0 && (
-          <span className="text-xs text-gray-500">₹{tick.price.toFixed(2)}</span>
+          <span className="text-xs text-gray-500">{csym}{tick.price.toFixed(2)}</span>
         )}
         {!tick.isLive && tick.error && (
           <span className="text-xs text-gray-600">—</span>
@@ -70,11 +75,14 @@ function TabStock({ symbol, isSelected, hasLots, onSelect, onRemove }: {
 
 function HoldingLot({ lot, onSell }: { lot: TradeLot; onSell: (lot: TradeLot) => void }) {
   const tick = useRealPrice(lot.symbol);
-  const cp = tick.price > 0 ? tick.price : lot.buyPrice;
+  const cp = tick.inrPrice > 0 ? tick.inrPrice : lot.buyPrice;
   const upnl = parseFloat(((cp - lot.buyPrice) * lot.remainingQty).toFixed(2));
   const isProfit = upnl >= 0;
-  const buyDate = new Date(lot.buyTimestamp).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-  const buyTime = new Date(lot.buyTimestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const stock = getSimStock(lot.symbol);
+  const csym = stock?.currency === "USD" ? "$" : "\u20B9";
+  const locale = stock?.currency === "USD" ? "en-US" : "en-IN";
+  const buyDate = new Date(lot.buyTimestamp).toLocaleDateString(locale, { day: "2-digit", month: "short" });
+  const buyTime = new Date(lot.buyTimestamp).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div
@@ -90,12 +98,12 @@ function HoldingLot({ lot, onSell }: { lot: TradeLot; onSell: (lot: TradeLot) =>
             </span>
           </div>
           <div className="text-xs text-gray-500 mt-0.5">
-            {buyDate} {buyTime} {'\u00B7'} ₹{lot.buyPrice.toFixed(2)}
+            {buyDate} {buyTime} {'\u00B7'} {csym}{lot.buyPrice.toFixed(2)}
           </div>
         </div>
         <div className="text-right">
           <div className={`text-sm font-bold font-mono ${isProfit ? "text-green-400" : "text-red-400"}`}>
-            {isProfit ? "+" : ""}₹{upnl.toFixed(2)}
+            {isProfit ? "+" : ""}{csym}{upnl.toFixed(2)}
           </div>
           <div className={`text-xs ${isProfit ? "text-green-600" : "text-red-600"}`}>
             {isProfit ? "▲" : "▼"}{Math.abs(((cp - lot.buyPrice) / lot.buyPrice) * 100).toFixed(2)}%
@@ -145,6 +153,8 @@ function DashboardInner() {
   const liveTick = useRealPrice(selected);
   const wallet = useSimWallet(session?.userId ?? "", session?.name ?? "");
   const selectedStock = getSimStock(selected) ?? getSimStock("NIFTY")!;
+  const csym = currencySym(selectedStock);
+  const usdLocale = selectedStock.currency === "USD";
 
   // Ensure URL symbol is synced into activeTabs (backup if markets page missed it)
   useEffect(() => {
@@ -173,7 +183,7 @@ function DashboardInner() {
 
   const holding = wallet.getOpenLots(selected);
   const isIndex = selectedStock.isIndex;
-  const tradeCost = parseFloat((qty * liveTick.price).toFixed(2));
+  const tradeCost = parseFloat((qty * liveTick.inrPrice).toFixed(2));
 
   const openLotSymbols = new Set(wallet.getAllOpenLots().map(l => l.symbol));
 
@@ -195,6 +205,7 @@ function DashboardInner() {
     id: string; label: string; yahooSymbol: string;
     sector: string; isIndex: boolean;
   }) {
+    const isCrypto = result.sector === "Crypto";
     registerSymbol({
       id:          result.id,
       label:       result.label,
@@ -206,7 +217,8 @@ function DashboardInner() {
       lotSize:     1,
       isIndex:     result.isIndex,
       isPinned:    false,
-      tvSymbol:    result.isIndex ? `NSE:${result.id}` : `NSE:${result.id}`,
+      tvSymbol:    isCrypto ? result.yahooSymbol : `NSE:${result.id}`,
+      currency:    isCrypto ? "USD" : "INR",
     });
     addSymbol(result);
     handleSymbolSelect(result.id);
@@ -214,9 +226,11 @@ function DashboardInner() {
 
   function handleBuy() {
     if (!liveTick.isLive) return;
-    const ok = wallet.buy(selected, qty, liveTick.price);
+    const buyPrice = liveTick.inrPrice;
+    const ok = wallet.buy(selected, qty, buyPrice);
+    const isCryptoStock = selectedStock.currency === "USD";
     setTradeMsg(ok
-      ? { text: `\u2705 New lot: ${qty} \u00D7 ${selected} @ ₹${liveTick.price.toFixed(2)} | Cost ₹${tradeCost.toFixed(2)}`, ok: true }
+      ? { text: `\u2705 New lot: ${qty} \u00D7 ${selected} @ ${isCryptoStock ? `$${liveTick.price.toFixed(2)} (\u20B9${buyPrice.toFixed(2)})` : `\u20B9${buyPrice.toFixed(2)}`} | Cost \u20B9${(qty * buyPrice).toFixed(2)}`, ok: true }
       : { text: `\u274C ${wallet.lastError}`, ok: false }
     );
     setTimeout(() => { setTradeMsg(null); wallet.clearError(); }, 4000);
@@ -243,12 +257,14 @@ function DashboardInner() {
       setTimeout(() => setTradeMsg(null), 4000);
       return;
     }
+    const sellPrice = liveTick.inrPrice;
     const lot = wallet.state.lots.find(l => l.lotId === lotId);
-    const ok = wallet.sellLot(lotId, qtySold, liveTick.price);
+    const ok = wallet.sellLot(lotId, qtySold, sellPrice);
     if (ok && lot) {
-      const pnl = (liveTick.price - lot.buyPrice) * qtySold;
+      const pnl = (sellPrice - lot.buyPrice) * qtySold;
+      const isCryptoStock = selectedStock.currency === "USD";
       setTradeMsg({
-        text: `\u2705 Sold ${qtySold} \u00D7 ${selected} @ ₹${liveTick.price.toFixed(2)} | P&L: ${pnl >= 0 ? "+" : ""}₹${pnl.toFixed(2)}`,
+        text: `\u2705 Sold ${qtySold} \u00D7 ${selected} @ ${isCryptoStock ? `$${liveTick.price.toFixed(2)} (\u20B9${sellPrice.toFixed(2)})` : `\u20B9${sellPrice.toFixed(2)}`} | P&L: ${pnl >= 0 ? "+" : ""}\u20B9${pnl.toFixed(2)}`,
         ok: pnl >= 0,
       });
     } else {
@@ -264,7 +280,7 @@ function DashboardInner() {
         isOpen={isSellModalOpen}
         lots={wallet.getOpenLots(selected)}
         initialSelectedLot={initialSellLot}
-        currentPrice={liveTick.price}
+        currentPrice={liveTick.inrPrice}
         onConfirm={handleSellLot}
         onClose={() => {
           setIsSellModalOpen(false);
@@ -378,8 +394,15 @@ function DashboardInner() {
                 </div>
                 <div className="flex items-baseline gap-2 mt-0.5">
                   <span className="text-2xl font-bold font-mono">
-                    {liveTick.price > 0 ? `₹${liveTick.price.toFixed(2)}` : "\u2014"}
+                    {liveTick.price > 0
+                      ? usdLocale
+                        ? `$${liveTick.price.toFixed(2)}`
+                        : `\u20B9${liveTick.price.toFixed(2)}`
+                      : "\u2014"}
                   </span>
+                  {usdLocale && liveTick.inrPrice > 0 && (
+                    <span className="text-sm font-mono text-gray-500">(\u20B9{liveTick.inrPrice.toFixed(2)})</span>
+                  )}
                   {liveTick.isLive && liveTick.price > 0 && (
                     <span className={`text-sm font-medium ${isUp ? "text-green-400" : "text-red-400"}`}>
                       {isUp ? "\u25B2" : "\u25BC"} {Math.abs(liveTick.change).toFixed(2)} ({Math.abs(liveTick.changePct).toFixed(2)}%)
@@ -390,8 +413,8 @@ function DashboardInner() {
                   )}
                 </div>
                 {liveTick.isLive && (
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {new Date(liveTick.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {new Date(liveTick.timestamp).toLocaleTimeString(usdLocale ? "en-US" : "en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                   </div>
                 )}
               </div>
@@ -426,12 +449,12 @@ function DashboardInner() {
                   />
                 </div>
                 {liveTick.price > 0 && (
-                  <span className="text-gray-400 text-sm font-mono">= ₹{tradeCost.toFixed(2)}</span>
+                  <span className="text-gray-400 text-sm font-mono">= {csym}{tradeCost.toFixed(2)}</span>
                 )}
                 <span className={`text-xs ${tradeCost > wallet.state.balance ? "text-red-400" : "text-gray-600"}`}>
                   {tradeCost > wallet.state.balance
-                    ? `\u26A0 Need ₹${(tradeCost - wallet.state.balance).toFixed(2)} more`
-                    : `Balance: ₹${wallet.state.balance.toFixed(2)}`
+                    ? `\u26A0 Need ${csym}${(tradeCost - wallet.state.balance).toFixed(2)} more`
+                    : `Balance: \u20B9${wallet.state.balance.toFixed(2)}`
                   }
                 </span>
                 <button
@@ -490,7 +513,10 @@ function DashboardInner() {
               <p className="text-gray-600 text-sm">No completed trades yet.</p>
             ) : (
               <div className="space-y-2">
-                {wallet.state.sellHistory.slice(0, 25).map(t => (
+                {wallet.state.sellHistory.slice(0, 25).map(t => {
+                  const stk = getSimStock(t.symbol);
+                  const scsym = stk?.currency === "USD" ? "$" : "\u20B9";
+                  return (
                   <div key={t.sellId} className="bg-gray-800 rounded-lg p-2 text-xs">
                     <div className="flex justify-between items-center">
                       <span className="text-red-400 font-bold">SELL</span>
@@ -498,16 +524,17 @@ function DashboardInner() {
                       <span className="text-gray-400">{'\u00D7'}{t.qtySold}</span>
                     </div>
                     <div className="flex justify-between text-gray-400 mt-0.5">
-                      <span>@ ₹{t.sellPrice.toFixed(2)}</span>
+                      <span>@{scsym}{t.sellPrice.toFixed(2)}</span>
                       <span className={`font-bold ${t.pnl >= 0 ? "text-green-400" : "text-red-400"}`}>
-                        {t.pnl >= 0 ? "+" : ""}₹{t.pnl.toFixed(2)}
+                        {t.pnl >= 0 ? "+" : ""}{scsym}{t.pnl.toFixed(2)}
                       </span>
                     </div>
                     <div className="text-gray-600 mt-0.5">
-                      {new Date(t.timestamp).toLocaleTimeString("en-IN")}
+                      {new Date(t.timestamp).toLocaleTimeString(stk?.currency === "USD" ? "en-US" : "en-IN")}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

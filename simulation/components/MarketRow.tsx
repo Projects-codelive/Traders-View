@@ -8,18 +8,23 @@ interface Props {
   onClick: (stock: MarketStock) => void;
 }
 
-function fmtCap(v: number | null): string {
+const CURRENCY_SYMBOLS: Record<string, string> = { INR: "\u20B9", USD: "$" };
+const isUSD = (s: MarketStock) => s.currency === "USD";
+
+function fmtCap(v: number | null, currency: string): string {
   if (!v) return "\u2014";
-  if (v >= 1e12) return `\u20B9${(v / 1e12).toFixed(2)}T`;
-  if (v >= 1e9)  return `\u20B9${(v / 1e9).toFixed(1)}B`;
-  if (v >= 1e7)  return `\u20B9${(v / 1e7).toFixed(1)}Cr`;
-  return `\u20B9${v.toLocaleString("en-IN")}`;
+  const sym = CURRENCY_SYMBOLS[currency] ?? "\u20B9";
+  if (v >= 1e12) return `${sym}${(v / 1e12).toFixed(2)}T`;
+  if (v >= 1e9)  return `${sym}${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e7 && currency === "INR") return `${sym}${(v / 1e7).toFixed(1)}Cr`;
+  if (v >= 1e6 && currency === "USD") return `${sym}${(v / 1e6).toFixed(1)}M`;
+  return `${sym}${v.toLocaleString(currency === "USD" ? "en-US" : "en-IN")}`;
 }
 
 function fmtVol(v: number): string {
-  if (v >= 1e7) return `${(v / 1e7).toFixed(2)}Cr`;
-  if (v >= 1e5) return `${(v / 1e5).toFixed(2)}L`;
-  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+  if (v >= 1e9)  return `${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6)  return `${(v / 1e6).toFixed(2)}M`;
+  if (v >= 1e3)  return `${(v / 1e3).toFixed(1)}K`;
   return String(v);
 }
 
@@ -37,6 +42,9 @@ export default function MarketRow({ stock, rank, onClick }: Props) {
 
   const isPos   = stock.changePct >= 0;
   const color   = isPos ? "#00d4aa" : "#ef5350";
+  const usd     = isUSD(stock);
+  const sym     = CURRENCY_SYMBOLS[stock.currency ?? "INR"] ?? "\u20B9";
+  const locale  = usd ? "en-US" : "en-IN";
 
   // Day range bar
   const hasDayRange = stock.dayHigh != null && stock.dayLow != null && stock.dayHigh > stock.dayLow;
@@ -68,7 +76,7 @@ export default function MarketRow({ stock, rank, onClick }: Props) {
         </div>
         <div className="min-w-0">
           <div className="text-sm font-mono font-semibold text-white truncate">{stock.id}</div>
-          <div className="text-xs text-gray-600 truncate">{stock.label !== stock.id ? stock.label : "NSE"}</div>
+          <div className="text-xs text-gray-600 truncate">{stock.label !== stock.id ? stock.label : (usd ? "Crypto" : "NSE")}</div>
         </div>
       </div>
 
@@ -76,7 +84,7 @@ export default function MarketRow({ stock, rank, onClick }: Props) {
         className="text-right font-mono font-bold text-sm transition-colors duration-300"
         style={{ color: flash && stock.flashDir ? (stock.flashDir === "up" ? "#00d4aa" : "#ef5350") : "white" }}
       >
-        ₹{stock.price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+        {sym}{stock.price.toLocaleString(locale, { maximumFractionDigits: 2 })}
       </div>
 
       <div className="text-right">
@@ -87,7 +95,7 @@ export default function MarketRow({ stock, rank, onClick }: Props) {
           {isPos ? "\u25B2" : "\u25BC"} {Math.abs(stock.changePct).toFixed(2)}%
         </span>
         <div className="text-xs text-gray-600 mt-0.5 font-mono">
-          {isPos ? "+" : ""}₹{stock.change.toFixed(2)}
+          {isPos ? "+" : ""}{sym}{stock.change.toFixed(2)}
         </div>
       </div>
 
@@ -96,15 +104,15 @@ export default function MarketRow({ stock, rank, onClick }: Props) {
       </div>
 
       <div className="text-right text-sm font-mono text-gray-400">
-        {fmtCap(stock.marketCap)}
+        {fmtCap(stock.marketCap, stock.currency ?? "INR")}
       </div>
 
       <div className="px-2">
         {hasDayRange ? (
           <>
             <div className="flex justify-between text-xs text-gray-700 mb-1">
-              <span>₹{stock.dayLow!.toFixed(0)}</span>
-              <span>₹{stock.dayHigh!.toFixed(0)}</span>
+              <span>{sym}{usd ? stock.dayLow!.toFixed(2) : stock.dayLow!.toFixed(0)}</span>
+              <span>{sym}{usd ? stock.dayHigh!.toFixed(2) : stock.dayHigh!.toFixed(0)}</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#1f2937" }}>
               <div

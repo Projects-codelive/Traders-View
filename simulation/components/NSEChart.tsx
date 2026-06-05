@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { getSimStock } from "../engine/marketData";
 import {
   createChart,
   CandlestickSeries,
@@ -163,9 +164,12 @@ export default function NSEChart({ symbol, livePrice, isLive }: Props) {
     setLoading(true);
     setError(null);
 
+    const stock = getSimStock(symbol);
+    const querySym = stock?.yahooSymbol ?? symbol;
+
     try {
       const res = await fetch(
-        `/api/candles?symbol=${symbol}&interval=${timeframe}`,
+        `/api/candles?symbol=${querySym}&interval=${timeframe}`,
         { cache: "no-store" }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -235,9 +239,9 @@ export default function NSEChart({ symbol, livePrice, isLive }: Props) {
   }, [livePrice, isLive]);
 
   function fmtVol(v: number): string {
-    if (v >= 10_000_000) return `${(v / 10_000_000).toFixed(2)}Cr`;
-    if (v >= 100_000)    return `${(v / 100_000).toFixed(2)}L`;
-    if (v >= 1_000)      return `${(v / 1_000).toFixed(1)}K`;
+    if (v >= 1_000_000_000) return `${(v / 1_000_000_000).toFixed(2)}B`;
+    if (v >= 1_000_000)    return `${(v / 1_000_000).toFixed(2)}M`;
+    if (v >= 1_000)        return `${(v / 1_000).toFixed(1)}K`;
     return String(v);
   }
 
@@ -248,7 +252,7 @@ export default function NSEChart({ symbol, livePrice, isLive }: Props) {
 
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800/60 flex-shrink-0">
         <div className="flex items-center gap-4 text-xs font-mono">
-          <span className="text-gray-400 font-semibold">{symbol} · NSE</span>
+          <span className="text-gray-400 font-semibold">{symbol} · {getSimStock(symbol)?.sector === "Crypto" ? "Crypto" : "NSE"}</span>
           {ohlcv ? (
             <>
               <span className="text-gray-500">O <span className="text-gray-200">{ohlcv.open.toFixed(2)}</span></span>

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { TradeLot } from "@/lib/auth-types";
+import { getSimStock } from "../engine/marketData";
 
 interface Props {
   isOpen: boolean;
@@ -51,6 +52,9 @@ export default function SellLotModal({
   }, [selectedLotId, remainingQty]);
 
   if (!isOpen || lots.length === 0 || !activeLot) return null;
+
+  const stockCfg = getSimStock(activeLot.symbol);
+  const csym = stockCfg?.currency === "USD" ? "$" : "\u20B9";
 
   const pnlPerShare = parseFloat((currentPrice - activeLot.buyPrice).toFixed(2));
   const estimatedPnL = parseFloat((pnlPerShare * qty).toFixed(2));
@@ -145,8 +149,8 @@ export default function SellLotModal({
                       <div>
                         <div className="text-[10px] text-gray-500">{buyDate}</div>
                         <div className="text-sm font-semibold text-white mt-0.5">
-                          {lot.remainingQty} Share{lot.remainingQty !== 1 && "s"}{" "}
-                          @ ₹{lot.buyPrice.toFixed(2)}
+                        {lot.remainingQty} Share{lot.remainingQty !== 1 && "s"}{" "}
+                        @ {csym}{lot.buyPrice.toFixed(2)}
                         </div>
                       </div>
                     </div>
@@ -156,7 +160,7 @@ export default function SellLotModal({
                           isLotProfit ? "text-green-400" : "text-red-400"
                         }`}
                       >
-                        {isLotProfit ? "+" : ""}₹{lotPnL.toFixed(2)}
+                        {isLotProfit ? "+" : ""}{csym}{lotPnL.toFixed(2)}
                       </div>
                       <div className="text-[10px] text-gray-500">
                         {((currentPrice - lot.buyPrice) / lot.buyPrice * 100).toFixed(2)}%
@@ -171,8 +175,8 @@ export default function SellLotModal({
           {/* Quick Info card for selected lot */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: "Lot Buy Price", value: `₹${activeLot.buyPrice.toFixed(2)}` },
-              { label: "Current Price", value: `₹${currentPrice.toFixed(2)}` },
+              { label: "Lot Buy Price", value: `${csym}${activeLot.buyPrice.toFixed(2)}` },
+              { label: "Current Price", value: `${csym}${currentPrice.toFixed(2)}` },
               { label: "Lot Shares Held", value: `${activeLot.remainingQty}` },
             ].map((s) => (
               <div key={s.label} className="bg-gray-850 border border-gray-800 rounded-xl p-3 text-center">
@@ -253,7 +257,7 @@ export default function SellLotModal({
               <div>
                 <div className="text-[10px] text-gray-500 uppercase tracking-wider">Estimated Proceeds</div>
                 <div className="text-lg font-bold font-mono text-white">
-                  ₹{proceeds.toFixed(2)}
+                  {csym}{proceeds.toFixed(2)}
                 </div>
               </div>
               <div>
@@ -263,7 +267,7 @@ export default function SellLotModal({
                     isProfit ? "text-green-400" : "text-red-400"
                   }`}
                 >
-                  {isProfit ? "+" : ""}₹{estimatedPnL.toFixed(2)}
+                  {isProfit ? "+" : ""}{csym}{estimatedPnL.toFixed(2)}
                 </div>
               </div>
               <div>
@@ -273,7 +277,7 @@ export default function SellLotModal({
                     isProfit ? "text-green-400" : "text-red-400"
                   }`}
                 >
-                  {isProfit ? "+" : ""}₹{pnlPerShare.toFixed(2)}
+                  {isProfit ? "+" : ""}{csym}{pnlPerShare.toFixed(2)}
                 </div>
               </div>
               <div>

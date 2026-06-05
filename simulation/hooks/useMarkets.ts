@@ -18,13 +18,15 @@ export interface MarketStock {
   dayHigh:     number | null;
   dayLow:      number | null;
   flashDir?:   "up" | "down" | null;
+  currency?:   string; // "INR" | "USD" — defaults to "INR"
 }
 
 export type FilterMode = "all" | "gainers" | "losers";
 export type SortMode   = "changePct" | "volume" | "marketCap" | "price";
 export type SectionKey = "FOSec" | "allSec" | "NIFTY" | "NIFTYNEXT50" | "BANKNIFTY";
+export type MarketType = "indian" | "crypto";
 
-export function useMarkets(filter: FilterMode, section: SectionKey) {
+export function useMarkets(filter: FilterMode, section: SectionKey, marketType: MarketType = "indian") {
   const [stocks,        setStocks]        = useState<MarketStock[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState<string | null>(null);
@@ -38,7 +40,10 @@ export function useMarkets(filter: FilterMode, section: SectionKey) {
 
   const fetchMarkets = useCallback(async () => {
     try {
-      const url  = `/api/markets?filter=${filter}&section=${section}`;
+      const isCrypto = marketType === "crypto";
+      const url  = isCrypto
+        ? `/api/crypto/markets?filter=${filter}`
+        : `/api/markets?filter=${filter}&section=${section}`;
       const res  = await fetch(url, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -64,7 +69,7 @@ export function useMarkets(filter: FilterMode, section: SectionKey) {
     } finally {
       setLoading(false);
     }
-  }, [filter, section]);
+  }, [filter, section, marketType]);
 
   useEffect(() => {
     fetchMarkets();

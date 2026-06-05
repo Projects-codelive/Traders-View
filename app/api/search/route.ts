@@ -17,16 +17,18 @@ export async function GET(req: NextRequest) {
 
     const filtered = quotes
       .filter((q: any) =>
-        (q.symbol?.endsWith(".NS") || q.symbol === "^BSESN" || q.symbol === "^NSEI") &&
+        (q.symbol?.endsWith(".NS") ||
+         q.symbol === "^BSESN" || q.symbol === "^NSEI" ||
+         q.quoteType === "CRYPTOCURRENCY") &&
         q.quoteType !== "MUTUALFUND" &&
         q.quoteType !== "ETF"
       )
       .slice(0, 8)
       .map((q: any) => ({
-        id:          q.symbol?.replace(".NS", "") ?? q.symbol,
+        id:          q.quoteType === "CRYPTOCURRENCY" ? q.symbol : (q.symbol?.replace(".NS", "") ?? q.symbol),
         label:       q.shortname ?? q.longname ?? q.symbol,
         yahooSymbol: q.symbol,
-        sector:      q.sector ?? q.industry ?? (q.symbol?.startsWith("^") ? "Index" : "NSE"),
+        sector:      q.quoteType === "CRYPTOCURRENCY" ? "Crypto" : (q.sector ?? q.industry ?? (q.symbol?.startsWith("^") ? "Index" : "NSE")),
         isIndex:     q.symbol?.startsWith("^") ?? false,
         exchange:    q.exchange ?? "NSE",
       }));

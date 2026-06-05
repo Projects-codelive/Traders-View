@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 function toYahooSymbol(symbol: string): string {
   const s = symbol.toUpperCase().trim();
-  if (s.startsWith("^") || s.endsWith(".NS") || s.endsWith(".BO")) return s;
+  if (s.startsWith("^") || s.endsWith(".NS") || s.endsWith(".BO") || s.includes("-")) return s;
   const special: Record<string, string> = {
     "NIFTY": "^NSEI", "NIFTY50": "^NSEI",
     "SENSEX": "^BSESN", "BSESN": "^BSESN",

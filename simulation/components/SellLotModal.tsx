@@ -10,6 +10,7 @@ interface Props {
   currentPrice: number;
   onConfirm: (lotId: string, qty: number) => void;
   onClose: () => void;
+  isShort?: boolean;
 }
 
 export default function SellLotModal({
@@ -19,6 +20,7 @@ export default function SellLotModal({
   currentPrice,
   onConfirm,
   onClose,
+  isShort,
 }: Props) {
   const [selectedLotId, setSelectedLotId] = useState<string>("");
   const [qty, setQty] = useState(1);
@@ -54,11 +56,13 @@ export default function SellLotModal({
   if (!isOpen || lots.length === 0 || !activeLot) return null;
 
   const stockCfg = getSimStock(activeLot.symbol);
-  const csym = stockCfg?.currency === "USD" ? "$" : "\u20B9";
+  const csym = "\u20B9";
 
-  const pnlPerShare = parseFloat((currentPrice - activeLot.buyPrice).toFixed(2));
+  const pnlPerShare = parseFloat((isShort ? activeLot.buyPrice - currentPrice : currentPrice - activeLot.buyPrice).toFixed(2));
   const estimatedPnL = parseFloat((pnlPerShare * qty).toFixed(2));
-  const proceeds = parseFloat((currentPrice * qty).toFixed(2));
+  const proceeds = isShort
+    ? parseFloat((qty * (2 * activeLot.buyPrice - currentPrice)).toFixed(2))
+    : parseFloat((currentPrice * qty).toFixed(2));
   const isProfit = estimatedPnL >= 0;
 
   function handleQtyChange(val: number) {
@@ -93,9 +97,9 @@ export default function SellLotModal({
       >
         <div className="flex items-center justify-between p-5 border-b border-gray-800 bg-gray-950/40">
           <div>
-            <h2 className="text-lg font-bold text-white">Sell {activeLot.symbol}</h2>
+            <h2 className="text-lg font-bold text-white">{isShort ? "Cover Short" : "Sell"} {activeLot.symbol}</h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              Choose an entry lot to sell shares from
+              {isShort ? "Choose a short position to cover" : "Choose an entry lot to sell shares from"}
             </p>
           </div>
           <button
@@ -124,7 +128,7 @@ export default function SellLotModal({
                     minute: "2-digit",
                   }
                 );
-                const lotPnL = (currentPrice - lot.buyPrice) * lot.remainingQty;
+                const lotPnL = (isShort ? lot.buyPrice - currentPrice : currentPrice - lot.buyPrice) * lot.remainingQty;
                 const isLotProfit = lotPnL >= 0;
 
                 return (
@@ -163,7 +167,7 @@ export default function SellLotModal({
                         {isLotProfit ? "+" : ""}{csym}{lotPnL.toFixed(2)}
                       </div>
                       <div className="text-[10px] text-gray-500">
-                        {((currentPrice - lot.buyPrice) / lot.buyPrice * 100).toFixed(2)}%
+                        {((isShort ? lot.buyPrice - currentPrice : currentPrice - lot.buyPrice) / lot.buyPrice * 100).toFixed(2)}%
                       </div>
                     </div>
                   </div>
@@ -175,7 +179,7 @@ export default function SellLotModal({
           {/* Quick Info card for selected lot */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: "Lot Buy Price", value: `${csym}${activeLot.buyPrice.toFixed(2)}` },
+              { label: isShort ? "Short Price" : "Lot Buy Price", value: `${csym}${activeLot.buyPrice.toFixed(2)}` },
               { label: "Current Price", value: `${csym}${currentPrice.toFixed(2)}` },
               { label: "Lot Shares Held", value: `${activeLot.remainingQty}` },
             ].map((s) => (
@@ -189,7 +193,7 @@ export default function SellLotModal({
           {/* Qty Input controls */}
           <div>
             <label className="text-xs text-gray-400 block font-semibold uppercase tracking-wider mb-1.5">
-              Quantity to Sell
+              {isShort ? "Quantity to Cover" : "Quantity to Sell"}
             </label>
             <div className="flex items-center gap-2">
               <button
@@ -221,7 +225,7 @@ export default function SellLotModal({
                 onClick={() => handleQtyChange(activeLot.remainingQty)}
                 className="text-xs font-semibold text-yellow-400 hover:text-yellow-300 px-2 transition"
               >
-                Sell All
+                {isShort ? "Cover All" : "Sell All"}
               </button>
             </div>
             {error && <p className="text-red-400 text-xs mt-1.5">{error}</p>}
@@ -255,13 +259,13 @@ export default function SellLotModal({
           >
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Estimated Proceeds</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">{isShort ? "Estimated Credit" : "Estimated Proceeds"}</div>
                 <div className="text-lg font-bold font-mono text-white">
                   {csym}{proceeds.toFixed(2)}
                 </div>
               </div>
               <div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">P&L on this sale</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">{isShort ? "P&L on this cover" : "P&L on this sale"}</div>
                 <div
                   className={`text-lg font-bold font-mono ${
                     isProfit ? "text-green-400" : "text-red-400"
@@ -315,7 +319,7 @@ export default function SellLotModal({
               onClick={handleConfirm}
               className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm transition"
             >
-              Confirm Sell
+              {isShort ? "Confirm Cover" : "Confirm Sell"}
             </button>
           </div>
         </div>

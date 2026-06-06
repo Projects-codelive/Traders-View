@@ -43,15 +43,41 @@ export interface EquityPoint {
   value: number;
 }
 
+export interface ShortPosition {
+  positionId:    string;
+  symbol:        string;
+  shortPrice:    number;
+  originalQty:   number;
+  remainingQty:  number;
+  marginBlocked: number;
+  openTimestamp: string;
+  isClosed:      boolean;
+}
+
+export interface CoverRecord {
+  coverId:       string;
+  positionId:    string;
+  symbol:        string;
+  qtyCovered:    number;
+  shortPrice:    number;
+  coverPrice:    number;
+  pnl:           number;
+  pnlPct:        number;
+  timestamp:     string;
+}
+
 export interface SimWalletState {
-  balance: number;
-  lots: TradeLot[];
-  sellHistory: SellRecord[];
-  totalRealizedPnL: number;
-  totalTradesCount: number;
-  winCount: number;
-  lossCount: number;
-  equityCurve: EquityPoint[];
+  balance:           number;
+  lots:              TradeLot[];
+  sellHistory:       SellRecord[];
+  totalRealizedPnL:  number;
+  totalTradesCount:  number;
+  winCount:          number;
+  lossCount:         number;
+  equityCurve:       EquityPoint[];
+  shortPositions:    ShortPosition[];
+  coverHistory:      CoverRecord[];
+  totalShortPnL:     number;
 }
 
 export interface LeaderboardEntry {

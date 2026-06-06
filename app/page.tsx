@@ -58,7 +58,7 @@ export default function LoginPage() {
             <img src="/logo3.png" alt="Play" className="w-50 rounded-lg" />
             {/* Play */}
           </h1>
-          <p className="text-gray-400 mt-2 text-sm">Practice trading with ₹100,000 virtual money</p>
+          <p className="text-gray-400 mt-2 text-sm">Practice trading with ₹2,00,000 virtual money</p>
         </div>
 
         <div className="bg-gray-900 rounded-2xl border border-gray-800 p-8 shadow-2xl">

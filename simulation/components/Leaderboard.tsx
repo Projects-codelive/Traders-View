@@ -358,8 +358,7 @@ export default function Leaderboard() {
   const rest = entries.slice(3);
   const total = entries.length;
 
-  const podium = [top3[1], top3[0], top3[2]].filter(Boolean) as LeaderboardEntry[];
-  const podiumRanks = [2, 1, 3];
+  const podiumEntries = [top3[1], top3[0], top3[2]].filter(Boolean) as LeaderboardEntry[];
 
   const BADGE_STYLES = {
     1: { label: "CURRENT CHAMPION", sub: "Gold Alpha", border: "#f5a62355", bg: "#f5a62308", glow: "0 0 30px #f5a62322", color: "#f5a623" },
@@ -384,8 +383,8 @@ export default function Leaderboard() {
 
       {top3.length > 0 && (
         <div className="grid grid-cols-3 gap-4 mb-6">
-          {podium.map((entry, i) => {
-            const rank = podiumRanks[i];
+          {podiumEntries.map((entry) => {
+            const rank = top3.indexOf(entry) + 1;
             const style = BADGE_STYLES[rank as 1 | 2 | 3];
             const isGold = rank === 1;
             return (

@@ -27,7 +27,7 @@ const symbolRegistry = new Map<string, StockConfig>(
   DEFAULT_STOCKS_LIST.map(s => [s.id, s])
 );
 
-export const SIM_STOCKS = DEFAULT_STOCKS_LIST;
+export const SIM_STOCKS = DEFAULT_STOCKS_LIST.filter(s => s.sector !== "Crypto");
 
 export function getSimStock(id: string): StockConfig | undefined {
   return symbolRegistry.get(id);

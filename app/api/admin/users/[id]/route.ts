@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { UserModel } from "@/lib/models/User";
+import { AdminActionModel } from "@/lib/models/AdminAction";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,9 +33,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // Credit balance (modifies user.balance directly, resets adminBalanceAdjustment)
     if (body.action === "credit" && typeof body.amount === "number") {
-      user.balance = parseFloat(((user.balance ?? 10000) + body.amount).toFixed(2));
+      const balanceBefore = user.balance ?? 10000;
+      user.balance = parseFloat((balanceBefore + body.amount).toFixed(2));
       user.adminBalanceAdjustment = 0;
       await user.save();
+      await AdminActionModel.create({
+        userId: user._id.toString(),
+        userName: user.name,
+        userEmail: user.email,
+        action: "credit",
+        amount: body.amount,
+        signedAmount: body.amount,
+        balanceBefore,
+        balanceAfter: user.balance,
+        createdAt: new Date().toISOString(),
+      });
       return NextResponse.json({ success: true, balance: user.balance });
     }
 
@@ -44,9 +57,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (current < body.amount) {
         return NextResponse.json({ error: "Insufficient balance." }, { status: 400 });
       }
+      const balanceBefore = current;
       user.balance = parseFloat((current - body.amount).toFixed(2));
       user.adminBalanceAdjustment = 0;
       await user.save();
+      await AdminActionModel.create({
+        userId: user._id.toString(),
+        userName: user.name,
+        userEmail: user.email,
+        action: "debit",
+        amount: body.amount,
+        signedAmount: -body.amount,
+        balanceBefore,
+        balanceAfter: user.balance,
+        createdAt: new Date().toISOString(),
+      });
       return NextResponse.json({ success: true, balance: user.balance });
     }
 

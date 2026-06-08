@@ -90,9 +90,9 @@ export async function GET(req: NextRequest) {
   const symbol = req.nextUrl.searchParams.get("symbol") ?? "WIPRO";
   const yahooSym = toYahooSymbol(symbol);
 
-  // Try v7 quote endpoint first (real-time), fall back to v8 chart
-  let data = await fetchQuoteV7(yahooSym);
-  if (!data) data = await fetchChartFallback(yahooSym);
+  // Try v8 chart endpoint first (v7 quote now returns 401), fall back to v7
+  let data = await fetchChartFallback(yahooSym);
+  if (!data) data = await fetchQuoteV7(yahooSym);
   if (!data) {
     return NextResponse.json({ error: `No data available for ${symbol}` }, { status: 503 });
   }

@@ -1,4 +1,4 @@
-import { AuthSession, LeaderboardEntry } from "./auth-types";
+import { AuthSession, LeaderboardEntry, User } from "./auth-types";
 
 const SESSION_KEY = "pt_session";
 
@@ -52,6 +52,113 @@ export function upsertLeaderboard(entry: LeaderboardEntry) {
     const fresh = entries.filter(e => new Date(e.lastUpdated).getTime() > cutoff);
     localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(fresh));
   } catch { /* silent */ }
+}
+
+// ── Admin auth ─────────────────────────────────────────────────────────────
+
+const ADMIN_SESSION_KEY = "admin_session";
+
+const ADMIN_USERNAME = "Admin";
+const ADMIN_PASSWORD = "Admin123x@";
+
+export interface AdminSession {
+  username:    string;
+  loggedInAt:  string;
+}
+
+export function getAllUsers(): User[] {
+  try {
+    const raw = localStorage.getItem("pt_users");
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+export function adminLogin(username: string, password: string): boolean {
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    const session: AdminSession = { username, loggedInAt: new Date().toISOString() };
+    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+    return true;
+  }
+  return false;
+}
+
+export function getAdminSession(): AdminSession | null {
+  try {
+    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export function clearAdminSession() {
+  localStorage.removeItem(ADMIN_SESSION_KEY);
+}
+
+// ── User management ────────────────────────────────────────────────────────
+
+export function blockUser(userId: string): boolean {
+  try {
+    const users = getAllUsers();
+    const idx   = users.findIndex(u => u.id === userId);
+    if (idx < 0) return false;
+    users[idx] = { ...users[idx], isBlocked: true };
+    localStorage.setItem("pt_users", JSON.stringify(users));
+
+    const lb = localStorage.getItem("sim_leaderboard");
+    if (lb) {
+      const entries = (JSON.parse(lb) as Array<Record<string, unknown>>).filter((e: Record<string, unknown>) => e.userId !== userId);
+      localStorage.setItem("sim_leaderboard", JSON.stringify(entries));
+    }
+
+    const session = localStorage.getItem("pt_session");
+    if (session) {
+      const parsed = JSON.parse(session);
+      if (parsed.userId === userId) localStorage.removeItem("pt_session");
+    }
+
+    return true;
+  } catch { return false; }
+}
+
+export function unblockUser(userId: string): boolean {
+  try {
+    const users = getAllUsers();
+    const idx   = users.findIndex(u => u.id === userId);
+    if (idx < 0) return false;
+    users[idx] = { ...users[idx], isBlocked: false };
+    localStorage.setItem("pt_users", JSON.stringify(users));
+    return true;
+  } catch { return false; }
+}
+
+export function creditBalance(userId: string, amount: number): boolean {
+  try {
+    const key     = `sim_wallet_${userId}`;
+    const raw     = localStorage.getItem(key);
+    const wallet  = raw ? JSON.parse(raw) : { balance: 10000, lots: [], sellHistory: [], totalRealizedPnL: 0, totalTradesCount: 0, winCount: 0, lossCount: 0, equityCurve: [], shortPositions: [], coverHistory: [], totalShortPnL: 0 };
+    wallet.balance = parseFloat((wallet.balance + amount).toFixed(2));
+    localStorage.setItem(key, JSON.stringify(wallet));
+    return true;
+  } catch { return false; }
+}
+
+export function debitBalance(userId: string, amount: number): boolean {
+  try {
+    const key    = `sim_wallet_${userId}`;
+    const raw    = localStorage.getItem(key);
+    if (!raw) return false;
+    const wallet = JSON.parse(raw);
+    if (wallet.balance < amount) return false;
+    wallet.balance = parseFloat((wallet.balance - amount).toFixed(2));
+    localStorage.setItem(key, JSON.stringify(wallet));
+    return true;
+  } catch { return false; }
+}
+
+export function getUserWallet(userId: string): Record<string, unknown> | null {
+  try {
+    const raw = localStorage.getItem(`sim_wallet_${userId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
 }
 
 

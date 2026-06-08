@@ -210,7 +210,10 @@ function DashboardInner() {
   // Hooks MUST be before the early return to comply with Rules of Hooks
   const { activeTabs, removeSymbol, addSymbol } = useSymbolRegistry();
   const liveTick = useRealPrice(selected);
-  const wallet = useSimWallet(session?.userId ?? "", session?.name ?? "");
+  const wallet = useSimWallet(session?.userId ?? "", session?.name ?? "", () => {
+    logout();
+    router.push("/");
+  });
   const selectedStock = getSimStock(selected) ?? getSimStock("NIFTY")!;
   const csym = currencySym(selectedStock);
   const usdLocale = selectedStock.currency === "USD";

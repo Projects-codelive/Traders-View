@@ -29,6 +29,19 @@ export async function POST(req: NextRequest) {
       email: email.toLowerCase().trim(),
       passwordHash: btoa(password),
       createdAt: new Date().toISOString(),
+      isBlocked: false,
+      balance: 10000,
+      lots: [],
+      sellHistory: [],
+      totalRealizedPnL: 0,
+      totalTradesCount: 0,
+      winCount: 0,
+      lossCount: 0,
+      equityCurve: [],
+      shortPositions: [],
+      coverHistory: [],
+      totalShortPnL: 0,
+      adminBalanceAdjustment: 0,
     });
 
     return NextResponse.json({

@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { saveSession } from "@/lib/auth";
+import { saveSession, clearSession } from "@/lib/auth";
 import { validateEmail, validatePassword } from "@/lib/validators";
 import { useAuth } from "@/context/AuthContext";
 import axios from "axios";
@@ -36,6 +36,15 @@ export default function LoginPage() {
     try {
       const res = await axios.post("/api/auth/login", { email, password });
       if (res.data.success) {
+        // Check if user is blocked (local storage)
+        const storedUsers: Array<Record<string, unknown>> = JSON.parse(localStorage.getItem("pt_users") || "[]");
+        const storedUser = storedUsers.find((u: Record<string, unknown>) => u.id === res.data.user.id);
+        if (storedUser?.isBlocked) {
+          clearSession();
+          setErrors({ form: "Your account has been suspended. Please contact admin." });
+          setSubmitting(false);
+          return;
+        }
         saveSession(res.data.user);
         refresh();
         router.push("/dashboard");

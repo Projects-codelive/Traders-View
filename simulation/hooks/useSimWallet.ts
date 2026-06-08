@@ -1,5 +1,5 @@
 "use client";
-import { useReducer, useEffect, useState } from "react";
+import { useReducer, useEffect, useState, useRef } from "react";
 import { SimWalletState, TradeLot, SellRecord, ShortPosition, CoverRecord, LeaderboardEntry } from "@/lib/auth-types";
 import { updateLeaderboardEntry } from "@/lib/leaderboard-api";
 import { upsertLeaderboard } from "@/lib/auth";
@@ -18,6 +18,7 @@ const INITIAL_STATE: SimWalletState = {
   shortPositions: [],
   coverHistory: [],
   totalShortPnL: 0,
+  adminBalanceAdjustment: 0,
 };
 
 type Action =
@@ -26,7 +27,9 @@ type Action =
   | { type: "OPEN_SHORT"; symbol: string; qty: number; price: number }
   | { type: "COVER_SHORT"; positionId: string; qty: number; currentPrice: number }
   | { type: "RESET" }
-  | { type: "HYDRATE"; payload: SimWalletState };
+  | { type: "HYDRATE"; payload: SimWalletState }
+  | { type: "SET_BALANCE"; balance: number }
+  | { type: "SET_ADMIN_ADJUSTMENT"; adjustment: number };
 
 function nanoid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -222,6 +225,12 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       return { ...state, balance: INITIAL_BALANCE, equityCurve: newCurve };
     }
 
+    case "SET_BALANCE":
+      return { ...state, balance: action.balance };
+
+    case "SET_ADMIN_ADJUSTMENT":
+      return { ...state, adminBalanceAdjustment: action.adjustment };
+
     case "HYDRATE": {
       const hydrated = { ...INITIAL_STATE, ...action.payload, equityCurve: action.payload.equityCurve ?? [] };
       // Backfill equity curve from sell history for existing wallets
@@ -246,17 +255,42 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
   }
 }
 
-export function useSimWallet(userId: string, userName: string) {
+export function useSimWallet(userId: string, userName: string, onBlocked?: () => void) {
   const STORAGE_KEY = `sim_wallet_${userId}`;
 
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
   const [hydrated, setHydrated] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) dispatch({ type: "HYDRATE", payload: JSON.parse(raw) });
+      if (raw) {
+        const payload = JSON.parse(raw);
+        dispatch({ type: "HYDRATE", payload });
+        // Sync existing wallet to MongoDB on page load
+        const wallet = { ...INITIAL_STATE, ...payload, equityCurve: payload.equityCurve ?? [] };
+        const hasData = wallet.lots.length > 0 || wallet.sellHistory.length > 0
+                     || wallet.shortPositions.length > 0 || wallet.coverHistory.length > 0;
+        if (userId && hasData) {
+          fetch("/api/sync-wallet", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ userId, wallet }),
+          }).then(async (res) => {
+            const data = await res.json();
+            if (data.isBlocked && onBlocked) onBlocked();
+            if (data.balance !== undefined && Math.abs(data.balance - stateRef.current.balance) > 0.01) {
+              dispatch({ type: "SET_BALANCE", balance: data.balance });
+            }
+            if (data.adminBalanceAdjustment !== undefined && data.adminBalanceAdjustment !== stateRef.current.adminBalanceAdjustment) {
+              dispatch({ type: "SET_ADMIN_ADJUSTMENT", adjustment: data.adminBalanceAdjustment });
+            }
+          }).catch(e => console.error("wallet sync failed:", e));
+        }
+      }
     } catch { /* start fresh */ }
     setHydrated(true);
   }, [userId]);
@@ -370,12 +404,45 @@ export function useSimWallet(userId: string, userName: string) {
 
     upsertLeaderboard(entry);
     updateLeaderboardEntry(entry);
-  }, [state, hydrated]);
+  }, [state, hydrated, userId]);
+
+  // Periodic sync every 60s to pick up admin balance adjustments
+  useEffect(() => {
+    if (!hydrated || !userId) return;
+    const interval = setInterval(() => {
+      syncWallet(stateRef.current);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [hydrated, userId]);
+
+  // Immediately sync the given wallet to MongoDB
+  function syncWallet(wallet: SimWalletState) {
+    const hasTradeData = wallet.lots.length > 0 || wallet.sellHistory.length > 0
+                      || wallet.shortPositions.length > 0 || wallet.coverHistory.length > 0;
+    if (userId && hasTradeData) {
+      fetch("/api/sync-wallet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, wallet }),
+      }).then(async (res) => {
+        const data = await res.json();
+        if (data.isBlocked && onBlocked) onBlocked();
+        if (data.balance !== undefined && Math.abs(data.balance - stateRef.current.balance) > 0.01) {
+          dispatch({ type: "SET_BALANCE", balance: data.balance });
+        }
+        if (data.adminBalanceAdjustment !== undefined && data.adminBalanceAdjustment !== stateRef.current.adminBalanceAdjustment) {
+          dispatch({ type: "SET_ADMIN_ADJUSTMENT", adjustment: data.adminBalanceAdjustment });
+        }
+      }).catch(e => console.error("wallet sync failed:", e));
+    }
+  }
 
   function buy(symbol: string, qty: number, price: number): boolean {
     try {
+      const newState = reducer(state, { type: "BUY", symbol, qty, price });
       dispatch({ type: "BUY", symbol, qty, price });
       setLastError(null);
+      syncWallet(newState);
       return true;
     } catch (e: any) {
       setLastError(e.message);
@@ -385,8 +452,10 @@ export function useSimWallet(userId: string, userName: string) {
 
   function sellLot(lotId: string, qty: number, currentPrice: number): boolean {
     try {
+      const newState = reducer(state, { type: "SELL_LOT", lotId, qty, currentPrice });
       dispatch({ type: "SELL_LOT", lotId, qty, currentPrice });
       setLastError(null);
+      syncWallet(newState);
       return true;
     } catch (e: any) {
       setLastError(e.message);
@@ -395,8 +464,10 @@ export function useSimWallet(userId: string, userName: string) {
   }
 
   function reset() {
+    const newState = reducer(state, { type: "RESET" });
     dispatch({ type: "RESET" });
     setLastError(null);
+    syncWallet(newState);
   }
 
   function clearError() { setLastError(null); }
@@ -425,8 +496,10 @@ export function useSimWallet(userId: string, userName: string) {
 
   function openShort(symbol: string, qty: number, price: number): boolean {
     try {
+      const newState = reducer(state, { type: "OPEN_SHORT", symbol, qty, price });
       dispatch({ type: "OPEN_SHORT", symbol, qty, price });
       setLastError(null);
+      syncWallet(newState);
       return true;
     } catch (e: any) {
       setLastError(e.message);
@@ -436,8 +509,10 @@ export function useSimWallet(userId: string, userName: string) {
 
   function coverShort(positionId: string, qty: number, currentPrice: number): boolean {
     try {
+      const newState = reducer(state, { type: "COVER_SHORT", positionId, qty, currentPrice });
       dispatch({ type: "COVER_SHORT", positionId, qty, currentPrice });
       setLastError(null);
+      syncWallet(newState);
       return true;
     } catch (e: any) {
       setLastError(e.message);

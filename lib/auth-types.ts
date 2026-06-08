@@ -7,6 +7,7 @@ export interface User {
   email: string;
   passwordHash: string;
   createdAt: string;
+  isBlocked?: boolean;
 }
 
 export interface AuthSession {
@@ -78,6 +79,7 @@ export interface SimWalletState {
   shortPositions:    ShortPosition[];
   coverHistory:      CoverRecord[];
   totalShortPnL:     number;
+  adminBalanceAdjustment: number;
 }
 
 export interface LeaderboardEntry {

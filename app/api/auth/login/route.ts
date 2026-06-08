@@ -25,6 +25,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Incorrect password." }, { status: 401 });
     }
 
+    if (user.isBlocked) {
+      return NextResponse.json({ error: "Your account has been suspended. Please contact admin." }, { status: 403 });
+    }
+
     return NextResponse.json({
       success: true,
       user: {

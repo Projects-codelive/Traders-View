@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { getAdminSession, clearAdminSession, blockUser, unblockUser } from "@/lib/auth";
 import { User } from "@/lib/auth-types";
 import axios from "axios";
+import AdminActionHistory from "@/components/AdminActionHistory";
 
 const RS = '\u20B9';
 
@@ -13,6 +14,7 @@ export default function AdminPage() {
   const [search,  setSearch]  = useState("");
   const [filter,  setFilter]  = useState<"all" | "active" | "blocked">("all");
   const [loading, setLoading] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     if (!getAdminSession()) { router.replace("/admin/login"); return; }
@@ -75,7 +77,7 @@ export default function AdminPage() {
         style={{ background: "#0a1410", borderBottom: "1px solid #1a2e22" }}
       >
         <div className="flex items-center gap-2">
-          <span className="text-xl font-bold" style={{ color: "#00d4aa" }}>Paper Trader</span>
+          <span className="text-xl font-bold" style={{ color: "#00d4aa" }}>Play</span>
           <span
             className="text-xs px-2 py-0.5 rounded font-mono"
             style={{ background: "#00d4aa18", color: "#00d4aa", border: "1px solid #00d4aa33" }}
@@ -120,6 +122,13 @@ export default function AdminPage() {
                 <div className="text-xl font-bold mt-0.5 font-mono" style={{ color: s.color }}>{s.value}</div>
               </div>
             ))}
+            <button
+              onClick={() => setShowHistory(true)}
+              className="px-4 py-3 rounded-xl text-xs font-semibold transition flex items-center gap-2"
+              style={{ background: "#0d1a14", color: "#00d4aa", border: "1px solid #00d4aa33", whiteSpace: "nowrap" }}
+            >
+              {'\u{1F4CB}'} Credit/Debit History
+            </button>
           </div>
         </div>
 
@@ -165,7 +174,7 @@ export default function AdminPage() {
 
         <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #1a2e22" }}>
           <div
-            className="grid px-6 py-3 text-xs font-mono tracking-wider text-gray-600"
+            className="grid px-6 py-3 text-sm font-mono tracking-wider text-gray-600"
             style={{ gridTemplateColumns: "120px 1fr 220px 100px 140px 120px", background: "#0a1410", borderBottom: "1px solid #1a2e22" }}
           >
             <span>USER ID</span>
@@ -270,6 +279,8 @@ export default function AdminPage() {
           </p>
         )}
       </div>
+
+      <AdminActionHistory open={showHistory} onClose={() => setShowHistory(false)} />
     </div>
   );
 }

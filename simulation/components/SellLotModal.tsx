@@ -11,6 +11,7 @@ interface Props {
   onConfirm: (lotId: string, qty: number) => void;
   onClose: () => void;
   isShort?: boolean;
+  marketOpen: boolean;
 }
 
 export default function SellLotModal({
@@ -21,6 +22,7 @@ export default function SellLotModal({
   onConfirm,
   onClose,
   isShort,
+  marketOpen,
 }: Props) {
   const [selectedLotId, setSelectedLotId] = useState<string>("");
   const [qty, setQty] = useState(1);
@@ -306,6 +308,10 @@ export default function SellLotModal({
             </p>
           )}
 
+          {!marketOpen && (
+            <p className="text-[10px] text-orange-400 text-center mb-2 font-bold">{'\u26A0\uFE0F'} Market is closed</p>
+          )}
+
           <div className="flex gap-3 pt-2">
             <button
               type="button"
@@ -317,7 +323,8 @@ export default function SellLotModal({
             <button
               type="button"
               onClick={handleConfirm}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm transition"
+              disabled={!marketOpen}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {isShort ? "Confirm Cover" : "Confirm Sell"}
             </button>

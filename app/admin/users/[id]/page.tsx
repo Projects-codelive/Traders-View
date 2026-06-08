@@ -4,6 +4,7 @@ import { useRouter, useParams } from "next/navigation";
 import { getAdminSession, getUserWallet, blockUser, unblockUser } from "@/lib/auth";
 import { createChart, AreaSeries, ColorType, LineStyle } from "lightweight-charts";
 import axios from "axios";
+import AdminActionHistory from "@/components/AdminActionHistory";
 
 const RS = '\u20B9';
 
@@ -48,6 +49,7 @@ export default function AdminUserPage() {
   const [amount,      setAmount]      = useState("");
   const [actionMsg,   setActionMsg]   = useState<{ text: string; ok: boolean } | null>(null);
   const [amountError, setAmountError] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     if (!getAdminSession()) { router.replace("/admin/login"); return; }
@@ -233,27 +235,27 @@ export default function AdminUserPage() {
             </h2>
             <div className="grid grid-cols-2 gap-y-4 text-sm">
               <div>
-                <div className="text-xs text-gray-600 mb-1">EMAIL ADDRESS</div>
+                <div className="text-sm text-gray-600 mb-1">EMAIL ADDRESS</div>
                 <div className="text-gray-300">{user.email}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-600 mb-1">PHONE NUMBER</div>
+                <div className="text-sm text-gray-600 mb-1">PHONE NUMBER</div>
                 <div className="text-gray-300">+91 {user.phone}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-600 mb-1">JOINING DATE</div>
+                <div className="text-sm text-gray-600 mb-1">JOINING DATE</div>
                 <div className="text-gray-300">{joinDate}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-600 mb-1">GENDER</div>
+                <div className="text-sm text-gray-600 mb-1">GENDER</div>
                 <div className="text-gray-300 capitalize">{user.gender}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-600 mb-1">DATE OF BIRTH</div>
+                <div className="text-sm text-gray-600 mb-1">DATE OF BIRTH</div>
                 <div className="text-gray-300">{new Date(user.dob).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-600 mb-1">STATUS</div>
+                <div className="text-sm text-gray-600 mb-1">STATUS</div>
                 <span style={{ color: user.isBlocked ? "#ef5350" : "#00d4aa" }}>
                   {user.isBlocked ? '\u25CF Blocked' : '\u25CF Active'}
                 </span>
@@ -273,14 +275,14 @@ export default function AdminUserPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="px-3 py-2 rounded-xl" style={{ background: "#0a1410" }}>
-                <div className="text-xs text-gray-600">Margin Used</div>
-                <div className="text-sm font-mono font-semibold text-white mt-0.5">
+                <div className="text-sm text-gray-600">Margin Used</div>
+                <div className="text-base font-mono font-semibold text-white mt-0.5">
                   {RS}{marginUsed.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                 </div>
               </div>
               <div className="px-3 py-2 rounded-xl" style={{ background: "#0a1410" }}>
-                <div className="text-xs text-gray-600">Buying Power</div>
-                <div className="text-sm font-mono font-semibold text-white mt-0.5">
+                <div className="text-sm text-gray-600">Buying Power</div>
+                <div className="text-base font-mono font-semibold text-white mt-0.5">
                   {RS}{buyingPower.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                 </div>
               </div>
@@ -301,8 +303,8 @@ export default function AdminUserPage() {
                 { label: "Avg. Holding",  value: `${avgHoldHours.toFixed(1)}h`,                         color: "#fff"     },
               ].map(s => (
                 <div key={s.label} className="px-4 py-3 rounded-xl" style={{ background: "#0a1410" }}>
-                  <div className="text-xs text-gray-600 mb-1">{s.label}</div>
-                  <div className="text-lg font-bold font-mono" style={{ color: s.color }}>{s.value}</div>
+                  <div className="text-sm text-gray-600 mb-1">{s.label}</div>
+                  <div className="text-xl font-bold font-mono" style={{ color: s.color }}>{s.value}</div>
                 </div>
               ))}
             </div>
@@ -325,16 +327,17 @@ export default function AdminUserPage() {
           <div className="rounded-2xl p-6 mb-4" style={{ background: "#0d1a14", border: "1px solid #1a2e22" }}>
             <h2 className="text-sm font-bold text-white mb-4">Recent Trade History</h2>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-sm">
                 <thead>
                   <tr style={{ borderBottom: "1px solid #1a2e22" }} className="text-gray-600">
-                    <th className="text-left pb-2 font-medium">SYMBOL</th>
-                    <th className="text-left pb-2 font-medium">TYPE</th>
-                    <th className="text-right pb-2 font-medium">QTY</th>
-                    <th className="text-right pb-2 font-medium">ENTRY PRICE</th>
-                    <th className="text-right pb-2 font-medium">EXIT PRICE</th>
-                    <th className="text-right pb-2 font-medium">P&L</th>
-                    <th className="text-right pb-2 font-medium">DATE</th>
+                    <th className="text-left pb-3 font-medium">SYMBOL</th>
+                    <th className="text-left pb-3 font-medium">TYPE</th>
+                    <th className="text-right pb-3 font-medium">QTY</th>
+                    <th className="text-right pb-3 font-medium">ENTRY PRICE</th>
+                    <th className="text-right pb-3 font-medium">EXIT PRICE</th>
+                    <th className="text-right pb-3 font-medium">P&L</th>
+                    <th className="text-right pb-3 font-medium">DATE</th>
+                    <th className="text-right pb-3 font-medium">TIME</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -342,20 +345,21 @@ export default function AdminUserPage() {
                      ...coverHistory.map((t: any) => ({ ...t, _type: "SHORT", _id: t.coverId, _qty: t.qtyCovered, _entry: t.shortPrice, _exit: t.coverPrice })),
                     ].sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 12).map((t: any) => (
                     <tr key={t._id} style={{ borderBottom: "1px solid #1a2e1280" }}>
-                      <td className="py-2 font-mono font-semibold text-white">{t.symbol}</td>
-                      <td className="py-2">
-                        <span className="text-xs px-1.5 py-0.5 rounded" style={{
+                      <td className="py-3 font-mono font-semibold text-white">{t.symbol}</td>
+                      <td className="py-3">
+                        <span className="text-xs px-2 py-1 rounded" style={{
                           background: t._type === "LONG" ? "#0a2a1a" : "#2a1a0a",
                           color: t._type === "LONG" ? "#00d4aa" : "#f5a623",
                         }}>{t._type}</span>
                       </td>
-                      <td className="py-2 text-right text-gray-400">{t._qty}</td>
-                      <td className="py-2 text-right text-gray-400">{RS}{t._entry?.toFixed(2) ?? '\u2014'}</td>
-                      <td className="py-2 text-right text-gray-400">{RS}{t._exit?.toFixed(2) ?? '\u2014'}</td>
-                      <td className="py-2 text-right font-mono font-bold" style={{ color: t.pnl >= 0 ? "#00d4aa" : "#ef5350" }}>
+                      <td className="py-3 text-right text-gray-400">{t._qty}</td>
+                      <td className="py-3 text-right text-gray-400">{RS}{t._entry?.toFixed(2) ?? '\u2014'}</td>
+                      <td className="py-3 text-right text-gray-400">{RS}{t._exit?.toFixed(2) ?? '\u2014'}</td>
+                      <td className="py-3 text-right font-mono font-bold" style={{ color: t.pnl >= 0 ? "#00d4aa" : "#ef5350" }}>
                         {t.pnl >= 0 ? "+" : ""}{RS}{t.pnl?.toFixed(2) ?? "0"}
                       </td>
-                      <td className="py-2 text-right text-gray-600">{new Date(t.timestamp).toLocaleDateString("en-IN")}</td>
+                      <td className="py-3 text-right text-gray-600">{new Date(t.timestamp).toLocaleDateString("en-IN")}</td>
+                      <td className="py-3 text-right text-gray-600 font-mono">{new Date(t.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -370,7 +374,7 @@ export default function AdminUserPage() {
             <h2 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
               <span style={{ color: "#00d4aa" }}>{'\u{1F6E1}\uFE0F'}</span> Account Control
             </h2>
-            <p className="text-xs text-gray-500 mb-4">
+            <p className="text-sm text-gray-500 mb-4">
               Blocking freezes the account, prevents login, and removes the user from the leaderboard. Unblocking restores full access.
             </p>
             <div className="flex gap-3">
@@ -396,6 +400,15 @@ export default function AdminUserPage() {
           <div className="rounded-2xl p-6" style={{ background: "#0d1a14", border: "1px solid #1a2e22" }}>
             <h2 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
               <span style={{ color: "#00d4aa" }}>{'\u{1F4B0}'}</span> Balance Management
+              <button
+                onClick={() => setShowHistory(true)}
+                className="ml-auto text-xs underline underline-offset-2 transition"
+                style={{ color: "#00d4aa", opacity: 0.7 }}
+                onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+                onMouseLeave={e => e.currentTarget.style.opacity = "0.7"}
+              >
+                Credit & Debit History
+              </button>
             </h2>
             <div className="mb-3">
               <div
@@ -446,6 +459,13 @@ export default function AdminUserPage() {
           </div>
         )}
       </div>
+
+      <AdminActionHistory
+        open={showHistory}
+        onClose={() => setShowHistory(false)}
+        userId={userId}
+        title={`Credit & Debit History - ${user.name}`}
+      />
     </div>
   );
 }

@@ -33,7 +33,7 @@ const UserSchema = new Schema<IUser>({
   passwordHash: { type: String, required: true },
   createdAt: { type: String, required: true },
   isBlocked: { type: Boolean, default: false },
-  balance: { type: Number, default: 10000 },
+  balance: { type: Number, default: 200000 },
   lots: { type: Schema.Types.Mixed, default: [] },
   sellHistory: { type: Schema.Types.Mixed, default: [] },
   totalRealizedPnL: { type: Number, default: 0 },

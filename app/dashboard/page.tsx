@@ -10,6 +10,7 @@ import SymbolSearch from "@/simulation/components/SymbolSearch";
 import NSEChart from "@/simulation/components/NSEChart";
 import SellLotModal from "@/simulation/components/SellLotModal";
 import { TradeLot, ShortPosition } from "@/lib/auth-types";
+import { getMarketStatus, formatDuration } from "@/lib/marketHours";
 
 function currencySym(cfg: { currency?: string }): string {
   return cfg.currency === "USD" ? "$" : "\u20B9";
@@ -217,6 +218,21 @@ function DashboardInner() {
   const selectedStock = getSimStock(selected) ?? getSimStock("NIFTY")!;
   const csym = currencySym(selectedStock);
   const usdLocale = selectedStock.currency === "USD";
+  const marketStatus = getMarketStatus(selectedStock.sector);
+
+  // Live countdown when market is closed
+  const [countdownLabel, setCountdownLabel] = useState("");
+  const [countdownMs, setCountdownMs] = useState(0);
+  useEffect(() => {
+    if (marketStatus.open) { setCountdownLabel(""); setCountdownMs(0); return; }
+    const id = setInterval(() => {
+      const now = Date.now();
+      const remaining = Math.max(0, marketStatus.nextOpenMs - now);
+      setCountdownMs(remaining);
+      setCountdownLabel(formatDuration(remaining));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [marketStatus.open, marketStatus.nextOpenMs]);
 
   // Ensure URL symbol is synced into activeTabs (backup if markets page missed it)
   useEffect(() => {
@@ -430,6 +446,7 @@ function DashboardInner() {
         }
         initialSelectedLot={sellLotTarget || initialSellLot}
         currentPrice={liveTick.inrPrice}
+        marketOpen={marketStatus.open}
         onConfirm={(lotId, qty) => {
           const isShortCover = sellLotTarget !== null || tradeMode === "short";
           if (isShortCover) {
@@ -545,9 +562,9 @@ function DashboardInner() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-gray-400 text-sm">{selected} {'\u00B7'} LTP</span>
-                  <span className={`flex items-center gap-1 text-xs ${liveTick.isLive ? "text-green-400" : "text-gray-500"}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full inline-block ${liveTick.isLive ? "bg-green-400 animate-pulse" : "bg-gray-600"}`}/>
-                    {liveTick.isLive ? "Live" : "Offline"}
+                  <span className={`flex items-center gap-1 text-xs ${liveTick.isLive && marketStatus.open ? "text-green-400" : !marketStatus.open ? "text-orange-400" : "text-gray-500"}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full inline-block ${liveTick.isLive && marketStatus.open ? "bg-green-400 animate-pulse" : !marketStatus.open ? "bg-orange-400" : "bg-gray-600"}`}/>
+                    {liveTick.isLive && marketStatus.open ? "Live" : !marketStatus.open ? "Closed" : "Offline"}
                   </span>
                 </div>
                 <div className="flex items-baseline gap-2 mt-0.5">
@@ -577,6 +594,13 @@ function DashboardInner() {
                 )}
               </div>
 
+              {!marketStatus.open && (
+                <div className="text-right flex-shrink-0">
+                  <div className="text-[10px] text-orange-500 font-mono tracking-wider">{'\u23F1'} OPENS IN</div>
+                  <div className="text-lg font-bold font-mono text-orange-400 tabular-nums">{countdownLabel}</div>
+                </div>
+              )}
+
               {holding.length > 0 && (
                 <div className="text-right text-sm">
                   <div className="text-gray-400">{holding.length} open lot{holding.length !== 1 ? "s" : ""} in {selected}</div>
@@ -587,7 +611,13 @@ function DashboardInner() {
               )}
             </div>
 
-            {!liveTick.isLive && (
+            {!marketStatus.open && (
+              <div className="flex items-center gap-2 bg-orange-950/40 border border-orange-800/40 text-orange-300 text-xs px-3 py-2 rounded-lg mb-3 font-bold">
+                <span>{'\u26A0\uFE0F'}</span>
+                <span>Market is close and going to start in {countdownLabel}</span>
+              </div>
+            )}
+            {!liveTick.isLive && marketStatus.open && (
               <div className="flex items-center gap-2 bg-orange-950/40 border border-orange-800/40 text-orange-300 text-xs px-3 py-2 rounded-lg mb-3">
                 <span>{'\u26A0\uFE0F'}</span>
                 <span>Price feed unavailable: {liveTick.error || 'Unknown error'}. Trades are disabled until price is live.</span>
@@ -643,7 +673,7 @@ function DashboardInner() {
                 </span>
                 <button
                   onClick={tradeMode === "long" ? handleBuy : handleOpenShort}
-                  disabled={!liveTick.isLive || tradeCost > wallet.state.balance || liveTick.price <= 0}
+                  disabled={!liveTick.isLive || tradeCost > wallet.state.balance || liveTick.price <= 0 || !marketStatus.open}
                   className="flex-1 font-bold py-2 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed text-white"
                   style={{
                     background: tradeMode === "long" ? "#22c55e" : "#ef5350",
@@ -654,7 +684,7 @@ function DashboardInner() {
                 {tradeMode === "short" ? (
                   <button
                     onClick={handleCoverClick}
-                    disabled={wallet.getOpenShorts(selected).length === 0}
+                    disabled={wallet.getOpenShorts(selected).length === 0 || !marketStatus.open}
                     className="flex-1 font-bold py-2 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed text-white"
                     style={{ background: "#6366f1" }}
                   >
@@ -663,7 +693,7 @@ function DashboardInner() {
                 ) : (
                   <button
                     onClick={handleSellClick}
-                    disabled={holding.length === 0}
+                    disabled={holding.length === 0 || !marketStatus.open}
                     className="flex-1 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-2 rounded-lg transition"
                   >
                     SELL

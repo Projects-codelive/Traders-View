@@ -140,7 +140,6 @@ export default function AdminLoginPage() {
 
         <div className="flex justify-between text-xs mt-6" style={{ color: "#374151" }}>
           <span>ADMIN_AUTH</span>
-          <span>Admin // Admin123x@</span>
         </div>
       </div>
 

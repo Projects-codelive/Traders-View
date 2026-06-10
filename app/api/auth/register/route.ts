@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       passwordHash: btoa(password),
       createdAt: new Date().toISOString(),
       isBlocked: false,
-      balance: 10000,
+      balance: 200000,
       lots: [],
       sellHistory: [],
       totalRealizedPnL: 0,

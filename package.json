@@ -11,6 +11,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.57.0",
     "axios": "^1.16.1",
     "lightweight-charts": "^5.2.0",
     "mongoose": "^9.6.3",

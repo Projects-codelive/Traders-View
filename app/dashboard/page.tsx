@@ -517,12 +517,12 @@ function DashboardInner() {
             Sign Out
           </button>
 
-          <button
+          {/* <button
             onClick={wallet.reset}
             className="text-xs text-gray-600 hover:text-gray-400 underline transition"
           >
             Reset
-          </button>
+          </button> */}
         </div>
       </header>
 

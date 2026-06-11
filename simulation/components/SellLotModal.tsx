@@ -45,15 +45,18 @@ export default function SellLotModal({
   }, [isOpen, initialSelectedLot]);
 
   const activeLot = lots.find((l) => l.lotId === selectedLotId) || lots[0];
+  const isCrypto = activeLot?.symbol.endsWith("-USD") ?? false;
+  const minQty = isCrypto ? 0.000001 : 1;
+  const step = isCrypto ? 0.000001 : 1;
 
   // Clamp quantity if selected lot or its remaining quantity changes
   const remainingQty = activeLot?.remainingQty;
   useEffect(() => {
     if (activeLot) {
-      setQty((prev) => Math.max(1, Math.min(activeLot.remainingQty, prev)));
+      setQty((prev) => Math.max(minQty, Math.min(activeLot.remainingQty, prev)));
       setError("");
     }
-  }, [selectedLotId, remainingQty]);
+  }, [selectedLotId, remainingQty, minQty]);
 
   if (!isOpen || lots.length === 0 || !activeLot) return null;
 
@@ -68,18 +71,18 @@ export default function SellLotModal({
   const isProfit = estimatedPnL >= 0;
 
   function handleQtyChange(val: number) {
-    const clamped = Math.max(1, Math.min(activeLot.remainingQty, val || 1));
+    const clamped = Math.max(minQty, Math.min(activeLot.remainingQty, val || minQty));
     setQty(clamped);
     setError("");
   }
 
   function handleConfirm() {
-    if (qty < 1) {
-      setError("Qty must be at least 1.");
+    if (qty < minQty) {
+      setError(`Qty must be at least ${minQty}.`);
       return;
     }
     if (qty > activeLot.remainingQty) {
-      setError(`Max ${activeLot.remainingQty} shares available.`);
+      setError(`Max ${activeLot.remainingQty} available.`);
       return;
     }
     onConfirm(activeLot.lotId, qty);
@@ -200,8 +203,8 @@ export default function SellLotModal({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => handleQtyChange(qty - 1)}
-                disabled={qty <= 1}
+                onClick={() => handleQtyChange(parseFloat((qty - step).toFixed(6)))}
+                disabled={qty <= minQty}
                 className="w-9 h-9 rounded-lg bg-gray-850 hover:bg-gray-800 disabled:opacity-30 text-white font-bold text-lg flex items-center justify-center transition border border-gray-750"
               >
                 &minus;
@@ -209,14 +212,15 @@ export default function SellLotModal({
               <input
                 type="number"
                 value={qty}
-                min={1}
+                min={minQty}
                 max={activeLot.remainingQty}
-                onChange={(e) => handleQtyChange(parseInt(e.target.value))}
+                step={step}
+                onChange={(e) => handleQtyChange(parseFloat(e.target.value || "0"))}
                 className="flex-1 bg-gray-855 border border-gray-750 rounded-lg px-3 py-2 text-white font-mono text-center text-lg focus:outline-none focus:border-yellow-500"
               />
               <button
                 type="button"
-                onClick={() => handleQtyChange(qty + 1)}
+                onClick={() => handleQtyChange(parseFloat((qty + step).toFixed(6)))}
                 disabled={qty >= activeLot.remainingQty}
                 className="w-9 h-9 rounded-lg bg-gray-855 hover:bg-gray-800 disabled:opacity-30 text-white font-bold text-lg flex items-center justify-center transition border border-gray-750"
               >
@@ -241,7 +245,10 @@ export default function SellLotModal({
                 key={ratio}
                 type="button"
                 onClick={() => {
-                  const target = Math.max(1, Math.round(activeLot.remainingQty * ratio));
+                  const raw = activeLot.remainingQty * ratio;
+                  const target = isCrypto
+                    ? parseFloat(raw.toFixed(6))
+                    : Math.max(1, Math.round(raw));
                   setQty(target);
                 }}
                 className="px-2.5 py-1 text-xs font-semibold bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white rounded-lg transition border border-gray-750"

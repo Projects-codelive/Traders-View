@@ -27,7 +27,11 @@ function EquityChart({ curve }: { curve: { time: number; value: number }[] }) {
       lineColor: "#00d4aa", topColor: "rgba(0,212,170,0.2)",
       bottomColor: "rgba(0,212,170,0)", lineWidth: 2,
     });
-    series.setData(curve.map(p => ({ time: Math.floor(p.time / 1000) as any, value: p.value })));
+    const data = curve.map(p => ({ time: Math.floor(p.time / 1000) as any, value: p.value }));
+    for (let i = data.length - 1; i > 0; i--) {
+      if (data[i].time === data[i - 1].time) data.splice(i, 1);
+    }
+    series.setData(data);
     chart.timeScale().fitContent();
     const ro = new ResizeObserver(() => { if (ref.current) chart.applyOptions({ width: ref.current.clientWidth }); });
     ro.observe(ref.current);

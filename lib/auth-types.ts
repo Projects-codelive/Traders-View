@@ -25,6 +25,8 @@ export interface TradeLot {
   remainingQty: number;
   buyTimestamp: string;
   isClosed: boolean;
+  stopLoss?: number;
+  takeProfit?: number;
 }
 
 export interface SellRecord {
@@ -53,6 +55,8 @@ export interface ShortPosition {
   marginBlocked: number;
   openTimestamp: string;
   isClosed:      boolean;
+  stopLoss?:    number;
+  takeProfit?:  number;
 }
 
 export interface CoverRecord {

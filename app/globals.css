@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+.overflow-y-auto::-webkit-scrollbar { width: 4px; }
+.overflow-y-auto::-webkit-scrollbar-track { background: #0b0e11; }
+.overflow-y-auto::-webkit-scrollbar-thumb { 
+  background: #2b3139; 
+  border-radius: 2px; 
+}
+.overflow-y-auto::-webkit-scrollbar-thumb:hover { 
+  background: #474d57; 
+}

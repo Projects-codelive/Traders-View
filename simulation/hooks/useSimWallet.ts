@@ -22,14 +22,16 @@ const INITIAL_STATE: SimWalletState = {
 };
 
 type Action =
-  | { type: "BUY"; symbol: string; qty: number; price: number }
-  | { type: "SELL_LOT"; lotId: string; qty: number; currentPrice: number }
-  | { type: "OPEN_SHORT"; symbol: string; qty: number; price: number }
-  | { type: "COVER_SHORT"; positionId: string; qty: number; currentPrice: number }
+  | { type: "BUY"; lotId: string; symbol: string; qty: number; price: number; stopLoss?: number; takeProfit?: number }
+  | { type: "SELL_LOT"; sellId: string; lotId: string; qty: number; currentPrice: number }
+  | { type: "OPEN_SHORT"; positionId: string; symbol: string; qty: number; price: number; stopLoss?: number; takeProfit?: number }
+  | { type: "COVER_SHORT"; coverId: string; positionId: string; qty: number; currentPrice: number }
   | { type: "RESET" }
   | { type: "HYDRATE"; payload: SimWalletState }
   | { type: "SET_BALANCE"; balance: number }
-  | { type: "SET_ADMIN_ADJUSTMENT"; adjustment: number };
+  | { type: "SET_ADMIN_ADJUSTMENT"; adjustment: number }
+  | { type: "SET_STOP_LOSS"; targetId: string; stopLoss: number; isShort: boolean }
+  | { type: "SET_TAKE_PROFIT"; targetId: string; takeProfit: number; isShort: boolean };
 
 function nanoid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -44,16 +46,18 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       if (cost > state.balance) throw new Error(
         `Insufficient balance. Need ₹${cost.toFixed(2)}, have ₹${state.balance.toFixed(2)}.`
       );
-      if (action.qty < 1) throw new Error("Quantity must be at least 1.");
+      if (action.qty <= 0) throw new Error("Quantity must be greater than 0.");
 
       const newLot: TradeLot = {
-        lotId: nanoid(),
+        lotId: action.lotId,
         symbol: action.symbol,
         buyPrice: action.price,
         originalQty: action.qty,
         remainingQty: action.qty,
         buyTimestamp: new Date().toISOString(),
         isClosed: false,
+        stopLoss: action.stopLoss,
+        takeProfit: action.takeProfit,
       };
 
       return {
@@ -68,7 +72,7 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       if (lotIdx < 0) throw new Error("Lot not found.");
       const lot = state.lots[lotIdx];
       if (lot.isClosed) throw new Error("This lot is already fully sold.");
-      if (action.qty < 1) throw new Error("Quantity must be at least 1.");
+      if (action.qty <= 0) throw new Error("Quantity must be greater than 0.");
       if (action.qty > lot.remainingQty) throw new Error(
         `Only ${lot.remainingQty} shares remaining in this lot.`
       );
@@ -79,7 +83,7 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       const pnlPct = parseFloat(((pnl / costBasis) * 100).toFixed(2));
 
       const sellRecord: SellRecord = {
-        sellId: nanoid(),
+        sellId: action.sellId,
         lotId: lot.lotId,
         symbol: lot.symbol,
         qtySold: action.qty,
@@ -125,8 +129,8 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
     }
 
     case "OPEN_SHORT": {
-      if (action.qty < 1)
-        throw new Error("Quantity must be at least 1.");
+      if (action.qty <= 0)
+        throw new Error("Quantity must be greater than 0.");
 
       const marginRequired = parseFloat((action.qty * action.price).toFixed(2));
       if (marginRequired > state.balance)
@@ -135,7 +139,7 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
         );
 
       const position: ShortPosition = {
-        positionId:    nanoid(),
+        positionId:    action.positionId,
         symbol:        action.symbol,
         shortPrice:    action.price,
         originalQty:   action.qty,
@@ -143,6 +147,8 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
         marginBlocked: marginRequired,
         openTimestamp: new Date().toISOString(),
         isClosed:      false,
+        stopLoss:      action.stopLoss,
+        takeProfit:    action.takeProfit,
       };
 
       return {
@@ -160,8 +166,8 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       const pos = state.shortPositions[posIdx];
       if (pos.isClosed)
         throw new Error("This short position is already closed.");
-      if (action.qty < 1)
-        throw new Error("Quantity must be at least 1.");
+      if (action.qty <= 0)
+        throw new Error("Quantity must be greater than 0.");
       if (action.qty > pos.remainingQty)
         throw new Error(`Only ${pos.remainingQty} shares remaining in this short.`);
 
@@ -173,7 +179,7 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       const balanceCredit      = parseFloat((marginForThisCover + pnl).toFixed(2));
 
       const coverRecord: CoverRecord = {
-        coverId:    nanoid(),
+        coverId:    action.coverId,
         positionId: pos.positionId,
         symbol:     pos.symbol,
         qtyCovered: action.qty,
@@ -213,6 +219,38 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       };
     }
 
+    case "SET_STOP_LOSS": {
+      if (!action.isShort) {
+        const idx = state.lots.findIndex(l => l.lotId === action.targetId);
+        if (idx < 0) throw new Error("Lot not found.");
+        const updated = [...state.lots];
+        updated[idx] = { ...updated[idx], stopLoss: action.stopLoss };
+        return { ...state, lots: updated };
+      } else {
+        const idx = state.shortPositions.findIndex(p => p.positionId === action.targetId);
+        if (idx < 0) throw new Error("Short position not found.");
+        const updated = [...state.shortPositions];
+        updated[idx] = { ...updated[idx], stopLoss: action.stopLoss };
+        return { ...state, shortPositions: updated };
+      }
+    }
+
+    case "SET_TAKE_PROFIT": {
+      if (!action.isShort) {
+        const idx = state.lots.findIndex(l => l.lotId === action.targetId);
+        if (idx < 0) throw new Error("Lot not found.");
+        const updated = [...state.lots];
+        updated[idx] = { ...updated[idx], takeProfit: action.takeProfit };
+        return { ...state, lots: updated };
+      } else {
+        const idx = state.shortPositions.findIndex(p => p.positionId === action.targetId);
+        if (idx < 0) throw new Error("Short position not found.");
+        const updated = [...state.shortPositions];
+        updated[idx] = { ...updated[idx], takeProfit: action.takeProfit };
+        return { ...state, shortPositions: updated };
+      }
+    }
+
     case "RESET": {
       const openLotsValue = state.lots
         .filter(l => !l.isClosed)
@@ -232,7 +270,19 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       return { ...state, adminBalanceAdjustment: action.adjustment };
 
     case "HYDRATE": {
-      const hydrated = { ...INITIAL_STATE, ...action.payload, equityCurve: action.payload.equityCurve ?? [] };
+      const raw = { ...INITIAL_STATE, ...action.payload, equityCurve: action.payload.equityCurve ?? [] };
+      // Migrate old crypto lots that have buyPrice stored in USD (before forex rate was applied)
+      const lots = (raw.lots ?? []).map(l =>
+        l.symbol.endsWith("-USD") && l.buyPrice > 0 && l.buyPrice < 100000
+          ? { ...l, buyPrice: parseFloat((l.buyPrice * 82).toFixed(2)) }
+          : l
+      );
+      const shortPositions = (raw.shortPositions ?? []).map(p =>
+        p.symbol.endsWith("-USD") && p.shortPrice > 0 && p.shortPrice < 100000
+          ? { ...p, shortPrice: parseFloat((p.shortPrice * 82).toFixed(2)) }
+          : p
+      );
+      const hydrated = { ...raw, lots, shortPositions };
       // Backfill equity curve from sell history for existing wallets
       if (hydrated.equityCurve.length === 0 && hydrated.sellHistory.length > 0) {
         let balance = INITIAL_BALANCE;
@@ -437,10 +487,12 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
     }
   }
 
-  function buy(symbol: string, qty: number, price: number): boolean {
+  function buy(symbol: string, qty: number, price: number, stopLoss?: number, takeProfit?: number): boolean {
     try {
-      const newState = reducer(state, { type: "BUY", symbol, qty, price });
-      dispatch({ type: "BUY", symbol, qty, price });
+      const lotId = nanoid();
+      const action = { type: "BUY" as const, lotId, symbol, qty, price, stopLoss, takeProfit };
+      const newState = reducer(state, action);
+      dispatch(action);
       setLastError(null);
       syncWallet(newState);
       return true;
@@ -452,8 +504,10 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
 
   function sellLot(lotId: string, qty: number, currentPrice: number): boolean {
     try {
-      const newState = reducer(state, { type: "SELL_LOT", lotId, qty, currentPrice });
-      dispatch({ type: "SELL_LOT", lotId, qty, currentPrice });
+      const sellId = nanoid();
+      const action = { type: "SELL_LOT" as const, sellId, lotId, qty, currentPrice };
+      const newState = reducer(state, action);
+      dispatch(action);
       setLastError(null);
       syncWallet(newState);
       return true;
@@ -494,10 +548,12 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
     return parseFloat((state.balance + holdingsValue).toFixed(2));
   }
 
-  function openShort(symbol: string, qty: number, price: number): boolean {
+  function openShort(symbol: string, qty: number, price: number, stopLoss?: number, takeProfit?: number): boolean {
     try {
-      const newState = reducer(state, { type: "OPEN_SHORT", symbol, qty, price });
-      dispatch({ type: "OPEN_SHORT", symbol, qty, price });
+      const positionId = nanoid();
+      const action = { type: "OPEN_SHORT" as const, positionId, symbol, qty, price, stopLoss, takeProfit };
+      const newState = reducer(state, action);
+      dispatch(action);
       setLastError(null);
       syncWallet(newState);
       return true;
@@ -509,8 +565,10 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
 
   function coverShort(positionId: string, qty: number, currentPrice: number): boolean {
     try {
-      const newState = reducer(state, { type: "COVER_SHORT", positionId, qty, currentPrice });
-      dispatch({ type: "COVER_SHORT", positionId, qty, currentPrice });
+      const coverId = nanoid();
+      const action = { type: "COVER_SHORT" as const, coverId, positionId, qty, currentPrice };
+      const newState = reducer(state, action);
+      dispatch(action);
       setLastError(null);
       syncWallet(newState);
       return true;
@@ -532,6 +590,32 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
     return parseFloat(((pos.shortPrice - currentPrice) * pos.remainingQty).toFixed(2));
   }
 
+  function setStopLoss(targetId: string, stopLoss: number, isShort: boolean): boolean {
+    try {
+      const newState = reducer(state, { type: "SET_STOP_LOSS", targetId, stopLoss, isShort });
+      dispatch({ type: "SET_STOP_LOSS", targetId, stopLoss, isShort });
+      setLastError(null);
+      syncWallet(newState);
+      return true;
+    } catch (e: any) {
+      setLastError(e.message);
+      return false;
+    }
+  }
+
+  function setTakeProfit(targetId: string, takeProfit: number, isShort: boolean): boolean {
+    try {
+      const newState = reducer(state, { type: "SET_TAKE_PROFIT", targetId, takeProfit, isShort });
+      dispatch({ type: "SET_TAKE_PROFIT", targetId, takeProfit, isShort });
+      setLastError(null);
+      syncWallet(newState);
+      return true;
+    } catch (e: any) {
+      setLastError(e.message);
+      return false;
+    }
+  }
+
   return {
     state,
     hydrated,
@@ -549,5 +633,7 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
     getOpenShorts,
     getAllOpenShorts,
     getShortPnL,
+    setStopLoss,
+    setTakeProfit,
   };
 }

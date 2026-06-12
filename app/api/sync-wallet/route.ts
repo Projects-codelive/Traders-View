@@ -53,6 +53,8 @@ export async function POST(req: NextRequest) {
       user.balance = wallet.balance ?? 10000;
       user.lastSyncedBalance = user.balance;
     }
+    user.usdcBalance = wallet.usdcBalance ?? 10000;
+    user.usdtBalance = wallet.usdtBalance ?? 10000;
 
     // Fetch live forex rate
     const usdInrRate = await getUSDINRRate();
@@ -63,8 +65,10 @@ export async function POST(req: NextRequest) {
     const newLots = incomingLots.filter((l: any) => !existingLotIds.has(l.lotId));
 
     for (const lot of newLots) {
-      if (lot.symbol.endsWith("-USD")) {
-        const usdPrice = lot.buyPrice / usdInrRate;
+      const isLegacyUSD = lot.symbol.endsWith("-USD");
+      if (isLegacyUSD || lot.symbol.endsWith("-USDT") || lot.symbol.endsWith("-USDC")) {
+        const usdPrice = isLegacyUSD ? lot.buyPrice / usdInrRate : lot.buyPrice;
+        const inrPrice = isLegacyUSD ? lot.buyPrice : lot.buyPrice * usdInrRate;
         try {
           const txTime = lot.buyTimestamp ? new Date(lot.buyTimestamp) : new Date();
           const duplicate = await CryptoOrderModel.findOne({
@@ -72,7 +76,7 @@ export async function POST(req: NextRequest) {
             symbol: lot.symbol,
             side: "buy",
             amount: lot.originalQty,
-            price: lot.buyPrice,
+            price: inrPrice,
             createdAt: { $gte: new Date(txTime.getTime() - 2000), $lte: new Date(txTime.getTime() + 2000) },
           });
           if (duplicate) {
@@ -87,16 +91,16 @@ export async function POST(req: NextRequest) {
             displaySymbol: lot.symbol.replace("-", "/"),
             side: "buy",
             orderType: "limit",
-            price: lot.buyPrice,
-            limitPrice: lot.buyPrice,
+            price: inrPrice,
+            limitPrice: inrPrice,
             amount: lot.originalQty,
-            total: lot.originalQty * lot.buyPrice,
-            fee: parseFloat((lot.originalQty * lot.buyPrice * 0.001).toFixed(2)),
+            total: lot.originalQty * inrPrice,
+            fee: parseFloat((lot.originalQty * inrPrice * 0.001).toFixed(2)),
             status: "filled",
             createdAt: txTime,
             filledAt: txTime,
             market: "crypto",
-            usdPrice: parseFloat(usdPrice.toFixed(2)),
+            usdPrice: parseFloat(usdPrice.toFixed(4)),
             usdInrRate,
           });
         } catch (err: any) {
@@ -110,8 +114,10 @@ export async function POST(req: NextRequest) {
     const newSells = incomingSells.filter((s: any) => !existingSellIds.has(s.sellId));
 
     for (const sell of newSells) {
-      if (sell.symbol.endsWith("-USD")) {
-        const usdPrice = sell.sellPrice / usdInrRate;
+      const isLegacyUSD = sell.symbol.endsWith("-USD");
+      if (isLegacyUSD || sell.symbol.endsWith("-USDT") || sell.symbol.endsWith("-USDC")) {
+        const usdPrice = isLegacyUSD ? sell.sellPrice / usdInrRate : sell.sellPrice;
+        const inrPrice = isLegacyUSD ? sell.sellPrice : sell.sellPrice * usdInrRate;
         try {
           const txTime = sell.timestamp ? new Date(sell.timestamp) : new Date();
           const duplicate = await CryptoOrderModel.findOne({
@@ -119,7 +125,7 @@ export async function POST(req: NextRequest) {
             symbol: sell.symbol,
             side: "sell",
             amount: sell.qtySold,
-            price: sell.sellPrice,
+            price: inrPrice,
             createdAt: { $gte: new Date(txTime.getTime() - 2000), $lte: new Date(txTime.getTime() + 2000) },
           });
           if (duplicate) {
@@ -134,16 +140,16 @@ export async function POST(req: NextRequest) {
             displaySymbol: sell.symbol.replace("-", "/"),
             side: "sell",
             orderType: "market",
-            price: sell.sellPrice,
+            price: inrPrice,
             limitPrice: 0,
             amount: sell.qtySold,
-            total: sell.qtySold * sell.sellPrice,
-            fee: parseFloat((sell.qtySold * sell.sellPrice * 0.001).toFixed(2)),
+            total: sell.qtySold * inrPrice,
+            fee: parseFloat((sell.qtySold * inrPrice * 0.001).toFixed(2)),
             status: "filled",
             createdAt: txTime,
             filledAt: txTime,
             market: "crypto",
-            usdPrice: parseFloat(usdPrice.toFixed(2)),
+            usdPrice: parseFloat(usdPrice.toFixed(4)),
             usdInrRate,
           });
         } catch (err: any) {
@@ -157,8 +163,10 @@ export async function POST(req: NextRequest) {
     const newShorts = incomingShorts.filter((s: any) => !existingShortIds.has(s.positionId));
 
     for (const pos of newShorts) {
-      if (pos.symbol.endsWith("-USD")) {
-        const usdPrice = pos.shortPrice / usdInrRate;
+      const isLegacyUSD = pos.symbol.endsWith("-USD");
+      if (isLegacyUSD || pos.symbol.endsWith("-USDT") || pos.symbol.endsWith("-USDC")) {
+        const usdPrice = isLegacyUSD ? pos.shortPrice / usdInrRate : pos.shortPrice;
+        const inrPrice = isLegacyUSD ? pos.shortPrice : pos.shortPrice * usdInrRate;
         try {
           const txTime = pos.openTimestamp ? new Date(pos.openTimestamp) : new Date();
           const duplicate = await CryptoOrderModel.findOne({
@@ -166,7 +174,7 @@ export async function POST(req: NextRequest) {
             symbol: pos.symbol,
             side: "sell",
             amount: pos.originalQty,
-            price: pos.shortPrice,
+            price: inrPrice,
             createdAt: { $gte: new Date(txTime.getTime() - 2000), $lte: new Date(txTime.getTime() + 2000) },
           });
           if (duplicate) {
@@ -181,16 +189,16 @@ export async function POST(req: NextRequest) {
             displaySymbol: pos.symbol.replace("-", "/"),
             side: "sell",
             orderType: "limit",
-            price: pos.shortPrice,
-            limitPrice: pos.shortPrice,
+            price: inrPrice,
+            limitPrice: inrPrice,
             amount: pos.originalQty,
-            total: pos.originalQty * pos.shortPrice,
-            fee: parseFloat((pos.originalQty * pos.shortPrice * 0.001).toFixed(2)),
+            total: pos.originalQty * inrPrice,
+            fee: parseFloat((pos.originalQty * inrPrice * 0.001).toFixed(2)),
             status: "filled",
             createdAt: txTime,
             filledAt: txTime,
             market: "crypto",
-            usdPrice: parseFloat(usdPrice.toFixed(2)),
+            usdPrice: parseFloat(usdPrice.toFixed(4)),
             usdInrRate,
           });
         } catch (err: any) {
@@ -204,8 +212,10 @@ export async function POST(req: NextRequest) {
     const newCovers = incomingCovers.filter((c: any) => !existingCoverIds.has(c.coverId));
 
     for (const cover of newCovers) {
-      if (cover.symbol.endsWith("-USD")) {
-        const usdPrice = cover.coverPrice / usdInrRate;
+      const isLegacyUSD = cover.symbol.endsWith("-USD");
+      if (isLegacyUSD || cover.symbol.endsWith("-USDT") || cover.symbol.endsWith("-USDC")) {
+        const usdPrice = isLegacyUSD ? cover.coverPrice / usdInrRate : cover.coverPrice;
+        const inrPrice = isLegacyUSD ? cover.coverPrice : cover.coverPrice * usdInrRate;
         try {
           const txTime = cover.timestamp ? new Date(cover.timestamp) : new Date();
           const duplicate = await CryptoOrderModel.findOne({
@@ -213,7 +223,7 @@ export async function POST(req: NextRequest) {
             symbol: cover.symbol,
             side: "buy",
             amount: cover.qtyCovered,
-            price: cover.coverPrice,
+            price: inrPrice,
             createdAt: { $gte: new Date(txTime.getTime() - 2000), $lte: new Date(txTime.getTime() + 2000) },
           });
           if (duplicate) {
@@ -228,16 +238,16 @@ export async function POST(req: NextRequest) {
             displaySymbol: cover.symbol.replace("-", "/"),
             side: "buy",
             orderType: "market",
-            price: cover.coverPrice,
+            price: inrPrice,
             limitPrice: 0,
             amount: cover.qtyCovered,
-            total: cover.qtyCovered * cover.coverPrice,
-            fee: parseFloat((cover.qtyCovered * cover.coverPrice * 0.001).toFixed(2)),
+            total: cover.qtyCovered * inrPrice,
+            fee: parseFloat((cover.qtyCovered * inrPrice * 0.001).toFixed(2)),
             status: "filled",
             createdAt: txTime,
             filledAt: txTime,
             market: "crypto",
-            usdPrice: parseFloat(usdPrice.toFixed(2)),
+            usdPrice: parseFloat(usdPrice.toFixed(4)),
             usdInrRate,
           });
         } catch (err: any) {
@@ -263,6 +273,8 @@ export async function POST(req: NextRequest) {
       success: true,
       isBlocked: user.isBlocked ?? false,
       balance: user.balance,
+      usdcBalance: user.usdcBalance,
+      usdtBalance: user.usdtBalance,
       adminBalanceAdjustment: user.adminBalanceAdjustment ?? 0,
     });
   } catch (err: unknown) {

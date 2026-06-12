@@ -8,6 +8,8 @@ const INITIAL_BALANCE = 200000;
 
 const INITIAL_STATE: SimWalletState = {
   balance: INITIAL_BALANCE,
+  usdcBalance: 10000,
+  usdtBalance: 10000,
   lots: [],
   sellHistory: [],
   totalRealizedPnL: 0,
@@ -22,13 +24,15 @@ const INITIAL_STATE: SimWalletState = {
 };
 
 type Action =
-  | { type: "BUY"; lotId: string; symbol: string; qty: number; price: number; stopLoss?: number; takeProfit?: number }
-  | { type: "SELL_LOT"; sellId: string; lotId: string; qty: number; currentPrice: number }
+  | { type: "BUY"; lotId: string; symbol: string; qty: number; price: number; stopLoss?: number; takeProfit?: number; usdInrRate?: number }
+  | { type: "SELL_LOT"; sellId: string; lotId: string; qty: number; currentPrice: number; usdInrRate?: number }
   | { type: "OPEN_SHORT"; positionId: string; symbol: string; qty: number; price: number; stopLoss?: number; takeProfit?: number }
   | { type: "COVER_SHORT"; coverId: string; positionId: string; qty: number; currentPrice: number }
   | { type: "RESET" }
   | { type: "HYDRATE"; payload: SimWalletState }
   | { type: "SET_BALANCE"; balance: number }
+  | { type: "SET_USDC_BALANCE"; balance: number }
+  | { type: "SET_USDT_BALANCE"; balance: number }
   | { type: "SET_ADMIN_ADJUSTMENT"; adjustment: number }
   | { type: "SET_STOP_LOSS"; targetId: string; stopLoss: number; isShort: boolean }
   | { type: "SET_TAKE_PROFIT"; targetId: string; takeProfit: number; isShort: boolean };
@@ -43,15 +47,19 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
     case "BUY": {
       const cost = parseFloat((action.qty * action.price).toFixed(2));
       if (cost <= 0) throw new Error("Invalid trade amount.");
+      
+      const rate = action.usdInrRate ?? 83.5;
+
       if (cost > state.balance) throw new Error(
         `Insufficient balance. Need ₹${cost.toFixed(2)}, have ₹${state.balance.toFixed(2)}.`
       );
+
       if (action.qty <= 0) throw new Error("Quantity must be greater than 0.");
 
       const newLot: TradeLot = {
         lotId: action.lotId,
         symbol: action.symbol,
-        buyPrice: action.price,
+        buyPrice: action.price, // Stored in INR
         originalQty: action.qty,
         remainingQty: action.qty,
         buyTimestamp: new Date().toISOString(),
@@ -63,6 +71,8 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       return {
         ...state,
         balance: parseFloat((state.balance - cost).toFixed(2)),
+        usdtBalance: state.usdtBalance,
+        usdcBalance: state.usdcBalance,
         lots: [...state.lots, newLot],
       };
     }
@@ -77,19 +87,23 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
         `Only ${lot.remainingQty} shares remaining in this lot.`
       );
 
+      const isUSDT = lot.symbol.endsWith("-USDT");
+      const isUSDC = lot.symbol.endsWith("-USDC");
+
+      // action.currentPrice is passed in INR, lot.buyPrice is stored in INR
       const proceeds = parseFloat((action.qty * action.currentPrice).toFixed(2));
       const costBasis = parseFloat((action.qty * lot.buyPrice).toFixed(2));
       const pnl = parseFloat((proceeds - costBasis).toFixed(2));
-      const pnlPct = parseFloat(((pnl / costBasis) * 100).toFixed(2));
+      const pnlPct = costBasis > 0 ? parseFloat(((pnl / costBasis) * 100).toFixed(2)) : 0;
 
       const sellRecord: SellRecord = {
         sellId: action.sellId,
         lotId: lot.lotId,
         symbol: lot.symbol,
         qtySold: action.qty,
-        buyPrice: lot.buyPrice,
-        sellPrice: action.currentPrice,
-        pnl,
+        buyPrice: lot.buyPrice, // Stored in INR
+        sellPrice: action.currentPrice, // Stored in INR
+        pnl, // Stored in INR
         pnlPct,
         timestamp: new Date().toISOString(),
       };
@@ -102,11 +116,22 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
         isClosed: newRemainingQty === 0,
       };
 
+      const rate = action.usdInrRate ?? 83.5;
+
       const newBalance = parseFloat((state.balance + proceeds).toFixed(2));
-      const openLotsValue = updatedLots
+      const newUsdtBalance = state.usdtBalance;
+      const newUsdcBalance = state.usdcBalance;
+
+      const openLotsValueINR = updatedLots
         .filter(l => !l.isClosed)
-        .reduce((sum, l) => sum + l.remainingQty * l.buyPrice, 0);
-      const portfolioSnapshot = parseFloat((newBalance + openLotsValue).toFixed(2));
+        .reduce((sum, l) => {
+          // buyPrice is stored in INR
+          return sum + l.remainingQty * l.buyPrice;
+        }, 0);
+
+      const cryptoCashValueINR = (newUsdtBalance + newUsdcBalance) * rate;
+      const portfolioSnapshot = parseFloat((newBalance + openLotsValueINR + cryptoCashValueINR).toFixed(2));
+
       const curveBefore = state.equityCurve.length === 0
         ? [{ time: Date.now() - 1000, value: INITIAL_BALANCE }]
         : state.equityCurve;
@@ -118,9 +143,11 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
       return {
         ...state,
         balance: newBalance,
+        usdtBalance: newUsdtBalance,
+        usdcBalance: newUsdcBalance,
         lots: updatedLots,
         sellHistory: [sellRecord, ...state.sellHistory],
-        totalRealizedPnL: parseFloat((state.totalRealizedPnL + pnl).toFixed(2)),
+        totalRealizedPnL: parseFloat((state.totalRealizedPnL + pnl).toFixed(2)), // pnl is already in INR
         totalTradesCount: state.totalTradesCount + 1,
         winCount: pnl > 0 ? state.winCount + 1 : state.winCount,
         lossCount: pnl < 0 ? state.lossCount + 1 : state.lossCount,
@@ -252,19 +279,38 @@ function reducer(state: SimWalletState, action: Action): SimWalletState {
     }
 
     case "RESET": {
-      const openLotsValue = state.lots
+      const rate = 83.5;
+      const openLotsValueINR = state.lots
         .filter(l => !l.isClosed)
-        .reduce((sum, l) => sum + l.remainingQty * l.buyPrice, 0);
-      const snapshot = parseFloat((INITIAL_BALANCE + openLotsValue).toFixed(2));
+        .reduce((sum, l) => {
+          const isLotCrypto = l.symbol.endsWith("-USDT") || l.symbol.endsWith("-USDC") || l.symbol.endsWith("-USD");
+          const isLegacyINR = l.symbol.endsWith("-USD") && l.buyPrice > 1000;
+          const val = l.remainingQty * l.buyPrice;
+          return sum + (isLotCrypto && !isLegacyINR ? val * rate : val);
+        }, 0);
+      const cryptoCashValueINR = (INITIAL_STATE.usdcBalance + INITIAL_STATE.usdtBalance) * rate;
+      const snapshot = parseFloat((INITIAL_BALANCE + openLotsValueINR + cryptoCashValueINR).toFixed(2));
       const newCurve = [
         ...state.equityCurve,
         { time: Date.now(), value: snapshot }
       ].slice(-200);
-      return { ...state, balance: INITIAL_BALANCE, equityCurve: newCurve };
+      return { 
+        ...state, 
+        balance: INITIAL_BALANCE, 
+        usdcBalance: INITIAL_STATE.usdcBalance,
+        usdtBalance: INITIAL_STATE.usdtBalance,
+        equityCurve: newCurve 
+      };
     }
 
     case "SET_BALANCE":
       return { ...state, balance: action.balance };
+
+    case "SET_USDC_BALANCE":
+      return { ...state, usdcBalance: action.balance };
+
+    case "SET_USDT_BALANCE":
+      return { ...state, usdtBalance: action.balance };
 
     case "SET_ADMIN_ADJUSTMENT":
       return { ...state, adminBalanceAdjustment: action.adjustment };
@@ -334,6 +380,12 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
             if (data.isBlocked && onBlocked) onBlocked();
             if (data.balance !== undefined && Math.abs(data.balance - stateRef.current.balance) > 0.01) {
               dispatch({ type: "SET_BALANCE", balance: data.balance });
+            }
+            if (data.usdcBalance !== undefined && Math.abs(data.usdcBalance - stateRef.current.usdcBalance) > 0.01) {
+              dispatch({ type: "SET_USDC_BALANCE", balance: data.usdcBalance });
+            }
+            if (data.usdtBalance !== undefined && Math.abs(data.usdtBalance - stateRef.current.usdtBalance) > 0.01) {
+              dispatch({ type: "SET_USDT_BALANCE", balance: data.usdtBalance });
             }
             if (data.adminBalanceAdjustment !== undefined && data.adminBalanceAdjustment !== stateRef.current.adminBalanceAdjustment) {
               dispatch({ type: "SET_ADMIN_ADJUSTMENT", adjustment: data.adminBalanceAdjustment });
@@ -480,6 +532,12 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
         if (data.balance !== undefined && Math.abs(data.balance - stateRef.current.balance) > 0.01) {
           dispatch({ type: "SET_BALANCE", balance: data.balance });
         }
+        if (data.usdcBalance !== undefined && Math.abs(data.usdcBalance - stateRef.current.usdcBalance) > 0.01) {
+          dispatch({ type: "SET_USDC_BALANCE", balance: data.usdcBalance });
+        }
+        if (data.usdtBalance !== undefined && Math.abs(data.usdtBalance - stateRef.current.usdtBalance) > 0.01) {
+          dispatch({ type: "SET_USDT_BALANCE", balance: data.usdtBalance });
+        }
         if (data.adminBalanceAdjustment !== undefined && data.adminBalanceAdjustment !== stateRef.current.adminBalanceAdjustment) {
           dispatch({ type: "SET_ADMIN_ADJUSTMENT", adjustment: data.adminBalanceAdjustment });
         }
@@ -487,10 +545,10 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
     }
   }
 
-  function buy(symbol: string, qty: number, price: number, stopLoss?: number, takeProfit?: number): boolean {
+  function buy(symbol: string, qty: number, price: number, stopLoss?: number, takeProfit?: number, usdInrRate?: number): boolean {
     try {
       const lotId = nanoid();
-      const action = { type: "BUY" as const, lotId, symbol, qty, price, stopLoss, takeProfit };
+      const action = { type: "BUY" as const, lotId, symbol, qty, price, stopLoss, takeProfit, usdInrRate };
       const newState = reducer(state, action);
       dispatch(action);
       setLastError(null);
@@ -502,10 +560,10 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
     }
   }
 
-  function sellLot(lotId: string, qty: number, currentPrice: number): boolean {
+  function sellLot(lotId: string, qty: number, currentPrice: number, usdInrRate?: number): boolean {
     try {
       const sellId = nanoid();
-      const action = { type: "SELL_LOT" as const, sellId, lotId, qty, currentPrice };
+      const action = { type: "SELL_LOT" as const, sellId, lotId, qty, currentPrice, usdInrRate };
       const newState = reducer(state, action);
       dispatch(action);
       setLastError(null);
@@ -539,13 +597,21 @@ export function useSimWallet(userId: string, userName: string, onBlocked?: () =>
   }
 
   function getTotalPortfolioValue(currentPrices: Record<string, number>): number {
+    const rate = 83.5;
     const holdingsValue = state.lots
       .filter(l => !l.isClosed)
       .reduce((sum, l) => {
-        const cp = currentPrices[l.symbol] ?? l.buyPrice;
+        const isCrypto = l.symbol.endsWith("-USDT") || l.symbol.endsWith("-USDC") || l.symbol.endsWith("-USD");
+        let cp = currentPrices[l.symbol];
+        if (cp !== undefined) {
+          if (isCrypto) cp = cp * rate;
+        } else {
+          cp = l.buyPrice;
+        }
         return sum + cp * l.remainingQty;
       }, 0);
-    return parseFloat((state.balance + holdingsValue).toFixed(2));
+    const cryptoCashValueINR = (state.usdcBalance + state.usdtBalance) * rate;
+    return parseFloat((state.balance + holdingsValue + cryptoCashValueINR).toFixed(2));
   }
 
   function openShort(symbol: string, qty: number, price: number, stopLoss?: number, takeProfit?: number): boolean {

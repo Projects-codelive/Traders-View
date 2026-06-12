@@ -30,7 +30,23 @@ const symbolRegistry = new Map<string, StockConfig>(
 export const SIM_STOCKS = DEFAULT_STOCKS_LIST.filter(s => s.sector !== "Crypto");
 
 export function getSimStock(id: string): StockConfig | undefined {
-  return symbolRegistry.get(id);
+  let config = symbolRegistry.get(id);
+  if (!config && (id.endsWith("-USDT") || id.endsWith("-USDC"))) {
+    const base = id.substring(0, id.length - 5);
+    const quote = id.substring(id.length - 4);
+    const baseConfig = symbolRegistry.get(`${base}-USD`);
+    if (baseConfig) {
+      config = {
+        ...baseConfig,
+        id,
+        label: `${baseConfig.label} (${quote})`,
+        yahooSymbol: quote === "USDT" ? `${base}-USDT` : `${base}-USD`,
+        tvSymbol: `COINBASE:${base}${quote}`,
+      };
+      symbolRegistry.set(id, config);
+    }
+  }
+  return config;
 }
 
 export function getAllSymbols(): StockConfig[] {

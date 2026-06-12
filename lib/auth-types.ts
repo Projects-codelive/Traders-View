@@ -84,6 +84,8 @@ export interface SimWalletState {
   coverHistory:      CoverRecord[];
   totalShortPnL:     number;
   adminBalanceAdjustment: number;
+  usdcBalance:       number;
+  usdtBalance:       number;
 }
 
 export interface LeaderboardEntry {

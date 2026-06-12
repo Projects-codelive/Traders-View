@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
 function toYahooSymbol(symbol: string): string {
-  const s = symbol.toUpperCase().trim();
+  let s = symbol.toUpperCase().trim().replace("/", "-");
+  if (s.endsWith("-USDT") || s.endsWith("-USDC")) {
+    s = s.replace("-USDT", "-USD").replace("-USDC", "-USD");
+  }
   if (s.startsWith("^") || s.endsWith(".NS") || s.endsWith(".BO") || s.includes("-")) return s;
   const special: Record<string, string> = {
     "NIFTY": "^NSEI", "NIFTY50": "^NSEI",

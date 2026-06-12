@@ -9,6 +9,8 @@ import SellLotModal from "@/simulation/components/SellLotModal";
 interface WalletLike {
   state: {
     balance: number;
+    usdcBalance: number;
+    usdtBalance: number;
     lots: TradeLot[];
     shortPositions: ShortPosition[];
     sellHistory: SellRecord[];
@@ -16,8 +18,8 @@ interface WalletLike {
     totalRealizedPnL: number;
     totalShortPnL: number;
   };
-  buy: (symbol: string, qty: number, price: number, stopLoss?: number, takeProfit?: number) => boolean;
-  sellLot: (lotId: string, qty: number, price: number) => boolean;
+  buy: (symbol: string, qty: number, price: number, stopLoss?: number, takeProfit?: number, usdInrRate?: number) => boolean;
+  sellLot: (lotId: string, qty: number, price: number, usdInrRate?: number) => boolean;
   openShort: (symbol: string, qty: number, price: number, stopLoss?: number, takeProfit?: number) => boolean;
   coverShort: (positionId: string, qty: number, price: number) => boolean;
   getOpenLots: (symbol: string) => TradeLot[];
@@ -73,12 +75,16 @@ export default function CryptoBinanceLayout(props: Props) {
   const { session } = useAuth();
 
   const isCryptoPair = useMemo(() => {
-    return props.selectedStock.sector === "Crypto" || selected.endsWith("-USD");
+    return props.selectedStock.sector === "Crypto" || selected.endsWith("-USD") || selected.endsWith("-USDT") || selected.endsWith("-USDC");
   }, [props.selectedStock.sector, selected]);
 
   const coinSymbol = coinLabel(selected);
   const currentPrice = liveTick.price || 0;
   const currentPriceINR = liveTick.inrPrice || 0;
+
+  const isUSDT = selected.endsWith("-USDT");
+  const usdToInrRate = currentPrice > 0 ? currentPriceINR / currentPrice : 83.5;
+  const cryptoBalanceINR = wallet.state.balance;
 
   const change = liveTick.change || 0;
   const changePercent = liveTick.changePct || 0;
@@ -173,7 +179,7 @@ export default function CryptoBinanceLayout(props: Props) {
       return;
     }
 
-    const ok = wallet.buy(selected, qtyVal, buyPrice, stopLoss, takeProfit);
+    const ok = wallet.buy(selected, qtyVal, buyPrice, stopLoss, takeProfit, usdToInrRate);
     const totalCost = (qtyVal * buyPrice).toFixed(2);
     if (ok) {
       const usdToInrRate = currentPrice > 0 ? currentPriceINR / currentPrice : 83.0;
@@ -450,7 +456,7 @@ export default function CryptoBinanceLayout(props: Props) {
     if (side === "ask") {
       setBuyAmount(totalAmount.toFixed(4));
       setBuyPriceINR(avgPriceINR);
-      const pct = userBalance > 0 ? Math.min(100, Math.round((totalAmount * avgPriceINR / userBalance) * 100)) : 0;
+      const pct = cryptoBalanceINR > 0 ? Math.min(100, Math.round((totalAmount * avgPriceINR / cryptoBalanceINR) * 100)) : 0;
       setBuySliderPct(pct);
       setIsBuyPriceEdited(true);
     } else {
@@ -475,7 +481,7 @@ export default function CryptoBinanceLayout(props: Props) {
     }
     const sellPrice = liveTick.inrPrice;
     const lot = wallet.state.lots.find(l => l.lotId === lotId);
-    const ok = wallet.sellLot(lotId, qtySold, sellPrice);
+    const ok = wallet.sellLot(lotId, qtySold, sellPrice, usdToInrRate);
     if (ok) {
       const pnl = (sellPrice - (lot?.buyPrice ?? 0)) * qtySold;
       const pnlStr = (pnl >= 0 ? "+" : "") + "₹" + pnl.toFixed(2);
@@ -506,10 +512,11 @@ export default function CryptoBinanceLayout(props: Props) {
       const r = 1 + (Math.sin(i * 1.7) * 0.3) + ((detFrom(base, i) - 0.5) * 0.05);
       const price = sym === selected ? base : base * r * (0.5 + detFrom(base * 2, i) * 0.8);
       const change = (detFrom(base, i * 7) - 0.5) * 8;
+      const baseName = sym.split("-")[0];
       return {
         symbol: sym,
-        displayName: sym.replace("-", "/"),
-        subLabel: sym.split("-")[0],
+        displayName: `${baseName}/${isUSDT ? "USDT" : "USDC"}`,
+        subLabel: baseName,
         price: Math.max(0.01, price),
         changePercent: change,
         isUp: change >= 0,
@@ -556,7 +563,7 @@ export default function CryptoBinanceLayout(props: Props) {
   const minOrderINR = 100;
   const buyTotal = parseFloat(buyAmount || "0") * currentPriceINR;
   const sellTotal = parseFloat(sellAmount || "0") * currentPriceINR;
-  const maxBuyAmount = userBalance > 0 && currentPriceINR > 0 ? userBalance / currentPriceINR : 0;
+  const maxBuyAmount = cryptoBalanceINR > 0 && currentPriceINR > 0 ? cryptoBalanceINR / currentPriceINR : 0;
 
   // Compute counts for bottom tabs
   const openOrdersCount = wallet.getAllOpenLots().length + wallet.getAllOpenShorts().length;
@@ -602,7 +609,7 @@ export default function CryptoBinanceLayout(props: Props) {
 
           {/* Column headers */}
           <div className="grid grid-cols-3 px-3 py-1 text-[10px] text-[#848e9c]">
-            <span>Price(USDC)</span>
+            <span>Price(INR)</span>
             <span className="text-right">Amount({coinSymbol})</span>
             <span className="text-right">Total</span>
           </div>
@@ -636,13 +643,13 @@ export default function CryptoBinanceLayout(props: Props) {
                   className="relative grid grid-cols-3 px-3 py-[2px] hover:bg-[#1e2329] cursor-pointer group"
                   style={{ background: isEmpty ? "transparent" : `linear-gradient(to left, rgba(246,70,93,0.12) ${order.depthPct}%, transparent 0%)` }}>
                   <span className={`${isEmpty ? "text-transparent" : "text-[#f6465d]"} text-[11px] z-10 font-medium`}>
-                    {isEmpty ? "—" : order.price.toFixed(2)}
+                    {isEmpty ? "—" : `₹${(order.price * usdToInrRate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </span>
                   <span className={`text-right ${isEmpty ? "text-transparent" : "text-[#eaecef]"} text-[11px] z-10`}>
                     {isEmpty ? "—" : order.amount.toFixed(4)}
                   </span>
                   <span className={`text-right ${isEmpty ? "text-transparent" : "text-[#848e9c]"} text-[11px] z-10`}>
-                    {isEmpty ? "—" : order.total.toFixed(2)}
+                    {isEmpty ? "—" : `₹${(order.total * usdToInrRate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </span>
                 </div>
               );
@@ -652,13 +659,13 @@ export default function CryptoBinanceLayout(props: Props) {
           {/* Current price center line */}
           <div className="flex items-center justify-center gap-2 py-2 border-y border-[#2b3139] bg-[#13161a] flex-shrink-0">
             <span className={`text-base font-bold ${priceUp ? "text-[#0ecb81]" : "text-[#f6465d]"}`}>
-              {currentPrice.toFixed(2)}
+              ₹{currentPriceINR.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
             <span className={`text-sm ${priceUp ? "text-[#0ecb81]" : "text-[#f6465d]"}`}>
               {priceUp ? "↑" : "↓"}
             </span>
             <span className="text-[#848e9c] text-xs">
-              ₹{currentPriceINR.toFixed(2)}
+              ${currentPrice.toFixed(2)}
             </span>
           </div>
 
@@ -691,13 +698,13 @@ export default function CryptoBinanceLayout(props: Props) {
                   className="relative grid grid-cols-3 px-3 py-[2px] hover:bg-[#1e2329] cursor-pointer"
                   style={{ background: isEmpty ? "transparent" : `linear-gradient(to left, rgba(14,203,129,0.12) ${order.depthPct}%, transparent 0%)` }}>
                   <span className={`${isEmpty ? "text-transparent" : "text-[#0ecb81]"} text-[11px] z-10 font-medium`}>
-                    {isEmpty ? "—" : order.price.toFixed(2)}
+                    {isEmpty ? "—" : `₹${(order.price * usdToInrRate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </span>
                   <span className={`text-right ${isEmpty ? "text-transparent" : "text-[#eaecef]"} text-[11px] z-10`}>
                     {isEmpty ? "—" : order.amount.toFixed(4)}
                   </span>
                   <span className={`text-right ${isEmpty ? "text-transparent" : "text-[#848e9c]"} text-[11px] z-10`}>
-                    {isEmpty ? "—" : order.total.toFixed(2)}
+                    {isEmpty ? "—" : `₹${(order.total * usdToInrRate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </span>
                 </div>
               );
@@ -718,7 +725,7 @@ export default function CryptoBinanceLayout(props: Props) {
                     {COIN_ICONS[coinSymbol] || coinSymbol.charAt(0)}
                   </div>
                   <div>
-                    <div className="text-white font-bold text-base">{coinSymbol}/USDC</div>
+                    <div className="text-white font-bold text-base">{coinSymbol}/{isUSDT ? "USDT" : "USDC"}</div>
                     <div className="text-[#848e9c] text-xs">{coinSymbol === "ETH" ? "Ethereum" : coinSymbol} Price</div>
                   </div>
                 </div>
@@ -753,6 +760,34 @@ export default function CryptoBinanceLayout(props: Props) {
 
               {/* Right badges */}
               <div className="flex items-center gap-2 text-xs text-[#848e9c]">
+                <div className="flex items-center bg-[#1e2329] border border-[#2b3139] rounded p-0.5 mr-2">
+                  <button
+                    onClick={() => {
+                      localStorage.setItem("crypto_quote_preference", "USDT");
+                      props.handleSymbolSelect(`${coinSymbol}-USDT`);
+                    }}
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                      isUSDT
+                        ? "bg-[#f0b90b] text-black"
+                        : "text-[#848e9c] hover:text-white"
+                    }`}
+                  >
+                    USDT
+                  </button>
+                  <button
+                    onClick={() => {
+                      localStorage.setItem("crypto_quote_preference", "USDC");
+                      props.handleSymbolSelect(`${coinSymbol}-USDC`);
+                    }}
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                      !isUSDT
+                        ? "bg-[#f0b90b] text-black"
+                        : "text-[#848e9c] hover:text-white"
+                    }`}
+                  >
+                    USDC
+                  </button>
+                </div>
                 <span className="border border-[#2b3139] px-2 py-0.5 rounded cursor-pointer hover:border-[#474d57]">Networks ▾</span>
                 <span className="border border-[#2b3139] px-2 py-0.5 rounded cursor-pointer hover:border-[#474d57]">Token Tags ▾</span>
               </div>
@@ -878,7 +913,7 @@ export default function CryptoBinanceLayout(props: Props) {
                       {/* Avbl quote currency (INR) */}
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-[#848e9c]">Avbl</span>
-                        <span className="text-[#0ecb81] font-bold">₹{userBalance.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
+                        <span className="text-[#0ecb81] font-bold">₹{cryptoBalanceINR.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
                       </div>
 
                       {/* Price Input */}
@@ -930,7 +965,7 @@ export default function CryptoBinanceLayout(props: Props) {
                               setBuyAmount(valStr);
                               const val = parseFloat(valStr) || 0;
                               const price = orderType === "Market" ? currentPriceINR : buyPriceINR;
-                              const pct = userBalance > 0 && price > 0 ? Math.min(100, Math.round((val * price / userBalance) * 100)) : 0;
+                              const pct = cryptoBalanceINR > 0 && price > 0 ? Math.min(100, Math.round((val * price / cryptoBalanceINR) * 100)) : 0;
                               setBuySliderPct(isNaN(pct) ? 0 : pct);
                             }}
                             className="bg-transparent text-white text-sm text-right flex-1 outline-none min-w-0"
@@ -954,7 +989,7 @@ export default function CryptoBinanceLayout(props: Props) {
                               const price = orderType === "Market" ? currentPriceINR : buyPriceINR;
                               if (pct === 0) setBuyAmount("");
                               else if (price > 0) {
-                                setBuyAmount(((userBalance * pct / 100) / price).toFixed(6));
+                                setBuyAmount(((cryptoBalanceINR * pct / 100) / price).toFixed(6));
                               }
                             }}
                             className="w-full h-[2px] bg-[#2b3139] appearance-none accent-[#0ecb81] cursor-pointer
@@ -972,7 +1007,7 @@ export default function CryptoBinanceLayout(props: Props) {
                                   const price = orderType === "Market" ? currentPriceINR : buyPriceINR;
                                   if (pct === 0) setBuyAmount("");
                                   else if (price > 0) {
-                                    setBuyAmount(((userBalance * pct / 100) / price).toFixed(6));
+                                    setBuyAmount(((cryptoBalanceINR * pct / 100) / price).toFixed(6));
                                   }
                                 }}
                                 className="text-[10px] text-[#848e9c] hover:text-white cursor-pointer">
@@ -1023,7 +1058,7 @@ export default function CryptoBinanceLayout(props: Props) {
                         if (!buyAmount || parseFloat(buyAmount) <= 0) return <div className="text-[#848e9c] text-[11px] text-center font-medium">Enter amount</div>;
                         if (total <= 0) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Invalid amount</div>;
                         if (total < minOrderINR) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Minimum order ₹{minOrderINR}</div>;
-                        if (total > userBalance) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Insufficient balance — need ₹{total.toFixed(2)}, have ₹{userBalance.toFixed(2)}</div>;
+                        if (total > cryptoBalanceINR) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Insufficient balance — need ₹{total.toFixed(2)}, have ₹{cryptoBalanceINR.toFixed(2)}</div>;
                         return null;
                       })()}
 
@@ -1040,7 +1075,7 @@ export default function CryptoBinanceLayout(props: Props) {
                           !props.marketStatus.open ||
                           currentPrice <= 0 ||
                           parseFloat(buyAmount || "0") <= 0 ||
-                          (parseFloat(buyAmount || "0") * (orderType === "Market" ? currentPriceINR : buyPriceINR)) > userBalance
+                          (parseFloat(buyAmount || "0") * (orderType === "Market" ? currentPriceINR : buyPriceINR)) > cryptoBalanceINR
                         }
                         className="w-full py-3 rounded-lg text-sm font-semibold text-white bg-[#0ecb81] hover:bg-[#0ab36e] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
@@ -1506,7 +1541,7 @@ export default function CryptoBinanceLayout(props: Props) {
                   <div className="text-[#848e9c] text-[10px]">{c.subLabel}</div>
                 </div>
                 <div className="text-right">
-                  <div className="text-white text-xs">${c.price.toFixed(2)}</div>
+                  <div className="text-white text-xs">₹{(c.price * usdToInrRate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                   <div className={`text-[10px] ${c.isUp ? "text-[#0ecb81]" : "text-[#f6465d]"}`}>
                     {c.changePercent >= 0 ? "+" : ""}{c.changePercent.toFixed(2)}%
                   </div>
@@ -1530,7 +1565,7 @@ export default function CryptoBinanceLayout(props: Props) {
               ))}
             </div>
             <div className="grid grid-cols-3 px-3 py-0.5 text-[10px] text-[#848e9c]">
-              <span>Price(USDT)</span>
+              <span>Price(INR)</span>
               <span className="text-right">Amount({coinSymbol})</span>
               <span className="text-right">Time</span>
             </div>
@@ -1539,7 +1574,7 @@ export default function CryptoBinanceLayout(props: Props) {
                 marketTrades.map((t: any, i: number) => (
                   <div key={i} className="grid grid-cols-3 px-3 py-[2px]">
                     <span className={`text-[11px] ${t.side === "buy" ? "text-[#0ecb81]" : "text-[#f6465d]"}`}>
-                      {t.price.toFixed(2)}
+                      ₹{(t.price * usdToInrRate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                     <span className="text-right text-[#eaecef] text-[11px]">{t.amount.toFixed(4)}</span>
                     <span className="text-right text-[#848e9c] text-[11px]">{t.time}</span>
@@ -1552,7 +1587,7 @@ export default function CryptoBinanceLayout(props: Props) {
                   myTrades.map((t: any, i: number) => (
                     <div key={i} className="grid grid-cols-3 px-3 py-[2px]">
                       <span className={`text-[11px] ${t.side === "buy" ? "text-[#0ecb81]" : "text-[#f6465d]"}`}>
-                        {t.price.toFixed(2)}
+                        ₹{(t.price * usdToInrRate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                       <span className="text-right text-[#eaecef] text-[11px]">{t.amount.toFixed(4)}</span>
                       <span className="text-right text-[#848e9c] text-[11px]">{t.time}</span>
@@ -1765,15 +1800,15 @@ export default function CryptoBinanceLayout(props: Props) {
         >
           <div className="flex justify-between gap-4">
             <span className="text-[#848e9c]">Avg Price:</span>
-            <span>≈ ${hoverStats.avgPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span>≈ ₹{(hoverStats.avgPrice * usdToInrRate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div className="flex justify-between gap-4">
             <span className="text-[#848e9c]">Sum {coinSymbol}:</span>
             <span>{hoverStats.sumBase.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span className="text-[#848e9c]">Sum USDC:</span>
-            <span>${hoverStats.sumQuote.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-[#848e9c]">Sum Total:</span>
+            <span>₹{(hoverStats.sumQuote * usdToInrRate).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
         </div>
       )}

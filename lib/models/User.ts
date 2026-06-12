@@ -22,6 +22,8 @@ export interface IUser extends Document {
   totalShortPnL: number;
   adminBalanceAdjustment: number;
   lastSyncedBalance: number;
+  usdcBalance: number;
+  usdtBalance: number;
 }
 
 const UserSchema = new Schema<IUser>({
@@ -46,6 +48,8 @@ const UserSchema = new Schema<IUser>({
   totalShortPnL: { type: Number, default: 0 },
   adminBalanceAdjustment: { type: Number, default: 0 },
   lastSyncedBalance: { type: Number, default: 0 },
+  usdcBalance: { type: Number, default: 10000 },
+  usdtBalance: { type: Number, default: 10000 },
 });
 
 // Force fresh model on every import (Next.js dev hot-reload)

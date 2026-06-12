@@ -17,6 +17,19 @@ function currencySym(cfg: { currency?: string }): string {
   return cfg.currency === "USD" ? "$" : "\u20B9";
 }
 
+function resolveSelectedCryptoSymbol(symbol: string): string {
+  if (symbol.endsWith("-USD")) {
+    let quotePref = "USDT";
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("crypto_quote_preference");
+      if (saved === "USDC") quotePref = "USDC";
+    }
+    const base = symbol.substring(0, symbol.length - 4);
+    return `${base}-${quotePref}`;
+  }
+  return symbol;
+}
+
 function TabStock({ symbol, isSelected, hasLots, onSelect, onRemove, removeDisabled }: {
   symbol: string;
   isSelected: boolean;
@@ -199,7 +212,7 @@ function DashboardInner() {
   useEffect(() => {
     const sym = searchParams.get("symbol");
     if (!sym) return;
-    const s = sym.toUpperCase();
+    const s = resolveSelectedCryptoSymbol(sym.toUpperCase());
     if (getSimStock(s)) {
       setSelected(s);
       setSymbolPriority(s);
@@ -279,7 +292,8 @@ function DashboardInner() {
   const isUp = liveTick.changePct >= 0;
 
   function handleSymbolSelect(id: string) {
-    setSelected(id);
+    const resolved = resolveSelectedCryptoSymbol(id);
+    setSelected(resolved);
     setQty(1);
     setTradeMsg(null);
     setTradeMode("long");
@@ -290,8 +304,9 @@ function DashboardInner() {
     sector: string; isIndex: boolean;
   }) {
     const isCrypto = result.sector === "Crypto";
+    const activeId = isCrypto ? resolveSelectedCryptoSymbol(result.id) : result.id;
     registerSymbol({
-      id:          result.id,
+      id:          activeId,
       label:       result.label,
       yahooSymbol: result.yahooSymbol,
       basePrice:   0,
@@ -304,8 +319,8 @@ function DashboardInner() {
       tvSymbol:    isCrypto ? result.yahooSymbol : `NSE:${result.id}`,
       currency:    isCrypto ? "USD" : "INR",
     });
-    addSymbol(result);
-    handleSymbolSelect(result.id);
+    addSymbol({ ...result, id: activeId });
+    handleSymbolSelect(activeId);
   }
 
   function handleBuy(stopLoss?: number, takeProfit?: number) {

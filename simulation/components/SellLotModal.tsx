@@ -47,7 +47,8 @@ export default function SellLotModal({
   }, [isOpen, initialSelectedLot]);
 
   const activeLot = lots.find((l) => l.lotId === selectedLotId) || lots[0];
-  const isCrypto = activeLot?.symbol.endsWith("-USD") ?? false;
+  const isCrypto = activeLot ? (activeLot.symbol.endsWith("-USD") || activeLot.symbol.endsWith("-USDT") || activeLot.symbol.endsWith("-USDC")) : false;
+  const quoteLabel = activeLot?.symbol.endsWith("-USDT") ? "USDT" : (activeLot?.symbol.endsWith("-USDC") || activeLot?.symbol.endsWith("-USD") ? "USDC" : "INR");
   const minQty = isCrypto ? 0.000001 : 1;
   const step = isCrypto ? 0.0001 : 1;
   const baseAsset = isCrypto && activeLot ? activeLot.symbol.split("-")[0] : "Share";
@@ -65,12 +66,13 @@ export default function SellLotModal({
 
   const stockCfg = getSimStock(activeLot.symbol);
   const csym = "\u20B9";
+  const decimals = 2;
 
-  const pnlPerShare = parseFloat((isShort ? activeLot.buyPrice - currentPrice : currentPrice - activeLot.buyPrice).toFixed(2));
-  const estimatedPnL = parseFloat((pnlPerShare * qty).toFixed(2));
+  const pnlPerShare = parseFloat((isShort ? activeLot.buyPrice - currentPrice : currentPrice - activeLot.buyPrice).toFixed(decimals));
+  const estimatedPnL = parseFloat((pnlPerShare * qty).toFixed(decimals));
   const proceeds = isShort
-    ? parseFloat((qty * (2 * activeLot.buyPrice - currentPrice)).toFixed(2))
-    : parseFloat((currentPrice * qty).toFixed(2));
+    ? parseFloat((qty * (2 * activeLot.buyPrice - currentPrice)).toFixed(decimals))
+    : parseFloat((currentPrice * qty).toFixed(decimals));
   const isProfit = estimatedPnL >= 0;
 
   function handleQtyChange(val: number) {
@@ -164,7 +166,7 @@ export default function SellLotModal({
                         {isCrypto
                           ? `${lot.remainingQty.toFixed(4)} ${baseAsset}`
                           : `${lot.remainingQty} Share${lot.remainingQty !== 1 ? "s" : ""}`}{" "}
-                        @ {csym}{lot.buyPrice.toFixed(2)}
+                        @ {csym}{lot.buyPrice.toFixed(decimals)}
                         </div>
                       </div>
                     </div>
@@ -174,7 +176,7 @@ export default function SellLotModal({
                           isLotProfit ? "text-green-400" : "text-red-400"
                         }`}
                       >
-                        {isLotProfit ? "+" : ""}{csym}{lotPnL.toFixed(2)}
+                        {isLotProfit ? "+" : ""}{csym}{lotPnL.toFixed(decimals)}
                       </div>
                       <div className="text-[10px] text-gray-500">
                         {((isShort ? lot.buyPrice - currentPrice : currentPrice - lot.buyPrice) / lot.buyPrice * 100).toFixed(2)}%
@@ -189,8 +191,8 @@ export default function SellLotModal({
           {/* Quick Info card for selected lot */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: isShort ? "Short Price" : "Lot Buy Price", value: `${csym}${activeLot.buyPrice.toFixed(2)}` },
-              { label: "Current Price", value: `${csym}${currentPrice.toFixed(2)}` },
+              { label: isShort ? "Short Price" : "Lot Buy Price", value: `${csym}${activeLot.buyPrice.toFixed(decimals)}` },
+              { label: "Current Price", value: `${csym}${currentPrice.toFixed(decimals)}` },
               { label: isCrypto ? `Lot ${baseAsset} Held` : "Lot Shares Held", value: isCrypto ? `${activeLot.remainingQty.toFixed(4)}` : `${activeLot.remainingQty}` },
             ].map((s) => (
               <div key={s.label} className="bg-gray-850 border border-gray-800 rounded-xl p-3 text-center">
@@ -275,7 +277,7 @@ export default function SellLotModal({
               <div>
                 <div className="text-[10px] text-gray-500 uppercase tracking-wider">{isShort ? "Estimated Credit" : "Estimated Proceeds"}</div>
                 <div className="text-lg font-bold font-mono text-white">
-                  {csym}{proceeds.toFixed(2)}
+                  {csym}{proceeds.toFixed(decimals)}
                 </div>
               </div>
               <div>
@@ -285,7 +287,7 @@ export default function SellLotModal({
                     isProfit ? "text-green-400" : "text-red-400"
                   }`}
                 >
-                  {isProfit ? "+" : ""}{csym}{estimatedPnL.toFixed(2)}
+                  {isProfit ? "+" : ""}{csym}{estimatedPnL.toFixed(decimals)}
                 </div>
               </div>
               <div>
@@ -295,7 +297,7 @@ export default function SellLotModal({
                     isProfit ? "text-green-400" : "text-red-400"
                   }`}
                 >
-                  {isProfit ? "+" : ""}{csym}{pnlPerShare.toFixed(2)}
+                  {isProfit ? "+" : ""}{csym}{pnlPerShare.toFixed(decimals)}
                 </div>
               </div>
               <div>

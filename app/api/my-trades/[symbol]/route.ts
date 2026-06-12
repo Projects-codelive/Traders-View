@@ -3,7 +3,7 @@ import { connectDB } from "@/lib/mongodb";
 import { CryptoOrderModel } from "@/lib/models/CryptoOrder";
 
 function normalizeSymbol(input: string) {
-  return input.replace("/", "-").replace("USDT", "USD").replace("USDC", "USD");
+  return input.replace("/", "-");
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ symbol: string }> }) {

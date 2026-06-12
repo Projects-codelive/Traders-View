@@ -3,7 +3,7 @@ import { connectDB } from "@/lib/mongodb";
 import { CryptoOrderModel } from "@/lib/models/CryptoOrder";
 
 function normalizeSymbol(input: string) {
-  return input.replace("/", "-").replace("USDT", "USD").replace("USDC", "USD");
+  return input.replace("/", "-");
 }
 
 function detFrom(seed: number, idx: number): number {
@@ -69,7 +69,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ symb
   const currentPriceParam = req.nextUrl.searchParams.get("currentPrice");
   let currentPrice = currentPriceParam ? parseFloat(currentPriceParam) : 0;
   if (!currentPrice || isNaN(currentPrice)) {
-    currentPrice = YAHOO_FALLBACKS[normalizedSymbol] ?? 100;
+    const fallbackKey = normalizedSymbol.replace("USDT", "USD").replace("USDC", "USD");
+    currentPrice = YAHOO_FALLBACKS[fallbackKey] ?? 100;
   }
 
   try {

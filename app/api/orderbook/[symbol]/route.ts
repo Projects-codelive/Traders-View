@@ -216,8 +216,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ symb
       };
     }
 
-    // Format last 30 trades
-    const recentTradesList = filledTrades.slice(0, 30);
+    // Format last 100 trades
+    const recentTradesList = filledTrades.slice(0, 100);
     const formattedTrades = recentTradesList.map(t => {
       const time = t.filledAt ? new Date(t.filledAt) : new Date(t.createdAt);
       return {
@@ -276,6 +276,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ symb
       symbol: normalizedSymbol,
       bids: syntheticBids,
       asks: syntheticAsks,
+      trades: [],
       lastUpdated: new Date().toISOString(),
       error: error.message,
     });

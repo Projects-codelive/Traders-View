@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import NSEChart from "@/simulation/components/NSEChart";
 import type { TradeLot, ShortPosition, SellRecord, CoverRecord } from "@/lib/auth-types";
+import { useAuth } from "@/context/AuthContext";
 
 interface WalletLike {
   state: {
@@ -45,7 +46,7 @@ interface Props {
   marketStatus: { open: boolean; nextOpenMs: number };
   isUp: boolean;
   handleSymbolSelect: (id: string) => void;
-  selectedStock: { currency?: string; label: string; isIndex?: boolean };
+  selectedStock: { currency?: string; label: string; isIndex?: boolean; sector?: string };
 }
 
 const COIN_ICONS: Record<string, string> = {
@@ -68,6 +69,11 @@ function detFrom(seed: number, idx: number): number {
 export default function CryptoBinanceLayout(props: Props) {
   const router = useRouter();
   const { selected, liveTick, wallet, handleBuy, handleSellClick, handleOpenShort, handleCoverClick, setQty } = props;
+  const { session } = useAuth();
+
+  const isCryptoPair = useMemo(() => {
+    return props.selectedStock.sector === "Crypto" || selected.endsWith("-USD");
+  }, [props.selectedStock.sector, selected]);
 
   const coinSymbol = coinLabel(selected);
   const currentPrice = liveTick.price || 0;
@@ -86,6 +92,11 @@ export default function CryptoBinanceLayout(props: Props) {
   const [tradesTab, setTradesTab] = useState("Market Trades");
   const [bottomTab, setBottomTab] = useState("Holdings");
   const [orderBookTick, setOrderBookTick] = useState("0.01");
+
+  // Hover and flash states for Binance style interaction (crypto only)
+  const [hoveredRow, setHoveredRow] = useState<{ side: "ask" | "bid"; index: number } | null>(null);
+  const [mouseCoords, setMouseCoords] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [flashActive, setFlashActive] = useState(false);
 
   // Order form state
   const [buyPriceINR, setBuyPriceINR] = useState(currentPriceINR);
@@ -220,6 +231,39 @@ export default function CryptoBinanceLayout(props: Props) {
     };
   }, [selected]);
 
+  // State to hold live user trade data fetched from backend (crypto only)
+  const [myTrades, setMyTrades] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!isCryptoPair) return;
+    if (!session?.userId) {
+      setMyTrades([]);
+      return;
+    }
+
+    let active = true;
+    const fetchMyTrades = async () => {
+      try {
+        const res = await fetch(`/api/my-trades/${selected}?userId=${session.userId}`);
+        if (!res.ok) throw new Error("Fetch failed");
+        const data = await res.json();
+        if (active) {
+          setMyTrades(data.trades || []);
+        }
+      } catch (err) {
+        console.error("Error fetching my trades:", err);
+      }
+    };
+
+    fetchMyTrades();
+    const interval = setInterval(fetchMyTrades, 2000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [selected, session?.userId, isCryptoPair]);
+
   const askOrders = useMemo(() => {
     if (apiOrderBook?.asks && apiOrderBook.asks.length > 0) {
       const base = currentPrice || 1600;
@@ -228,7 +272,7 @@ export default function CryptoBinanceLayout(props: Props) {
         amount: o.amount,
         total: o.total,
         depthPct: Math.min(o.total / (base * 20) * 100, 100)
-      }));
+      })).sort((a: any, b: any) => a.price - b.price);
     }
 
     const orders: OrderRow[] = [];
@@ -242,7 +286,7 @@ export default function CryptoBinanceLayout(props: Props) {
       cumTotal += total;
       orders.push({ price, amount, total, depthPct: Math.min(cumTotal / (base * 20) * 100, 100) });
     }
-    return orders.sort((a, b) => b.price - a.price);
+    return orders.sort((a, b) => a.price - b.price);
   }, [apiOrderBook, currentPrice]);
 
   const bidOrders = useMemo(() => {
@@ -269,6 +313,74 @@ export default function CryptoBinanceLayout(props: Props) {
     }
     return orders.sort((a, b) => b.price - a.price);
   }, [apiOrderBook, currentPrice]);
+
+  // Hover stats calculation for orderbook (crypto only)
+  const hoverStats = useMemo(() => {
+    if (!hoveredRow || !isCryptoPair) return null;
+    const { side, index } = hoveredRow;
+    const orders = side === "ask" ? askOrders : bidOrders;
+    if (index < 0 || index >= orders.length) return null;
+
+    let sumBase = 0;
+    let sumQuote = 0;
+
+    for (let i = 0; i <= index; i++) {
+      const order = orders[i];
+      if (order && order.amount > 0) {
+        sumBase += order.amount;
+        sumQuote += order.price * order.amount;
+      }
+    }
+
+    const avgPrice = sumBase > 0 ? sumQuote / sumBase : 0;
+    return {
+      avgPrice,
+      sumBase,
+      sumQuote,
+    };
+  }, [hoveredRow, askOrders, bidOrders, isCryptoPair]);
+
+  // Click-to-fill handler for orderbook (crypto only)
+  const handleOrderBookRowClick = (side: "ask" | "bid", index: number) => {
+    if (!isCryptoPair) return;
+    const orders = side === "ask" ? askOrders : bidOrders;
+    if (index < 0 || index >= orders.length) return;
+
+    let sumBase = 0;
+    let sumQuote = 0;
+
+    for (let i = 0; i <= index; i++) {
+      const order = orders[i];
+      if (order && order.amount > 0) {
+        sumBase += order.amount;
+        sumQuote += order.price * order.amount;
+      }
+    }
+
+    const avgPriceUSD = sumBase > 0 ? sumQuote / sumBase : orders[index].price;
+    const totalAmount = sumBase;
+
+    // Convert USD price to INR
+    const usdToInrRate = currentPrice > 0 ? currentPriceINR / currentPrice : 83.5;
+    const avgPriceINR = parseFloat((avgPriceUSD * usdToInrRate).toFixed(2));
+
+    // Trigger input field flash animation
+    setFlashActive(true);
+    setTimeout(() => setFlashActive(false), 500);
+
+    // Auto-fill price and amount in the form
+    if (side === "ask") {
+      props.setTradeMode("long");
+      setBuyAmount(totalAmount.toFixed(4));
+      setBuyPriceINR(avgPriceINR);
+      setSellPriceINR(avgPriceINR);
+    } else {
+      props.setTradeMode("short");
+      setSellAmount(totalAmount.toFixed(4));
+      setBuyPriceINR(avgPriceINR);
+      setSellPriceINR(avgPriceINR);
+    }
+  };
 
   interface CoinRow { symbol: string; displayName: string; subLabel: string; price: number; changePercent: number; isUp: boolean }
 
@@ -391,6 +503,26 @@ export default function CryptoBinanceLayout(props: Props) {
               const isEmpty = order.amount <= 0;
               return (
                 <div key={i}
+                  onMouseEnter={() => {
+                    if (isCryptoPair && !isEmpty) {
+                      setHoveredRow({ side: "ask", index: i });
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (isCryptoPair) {
+                      setHoveredRow(null);
+                    }
+                  }}
+                  onMouseMove={(e) => {
+                    if (isCryptoPair && !isEmpty) {
+                      setMouseCoords({ x: e.clientX, y: e.clientY });
+                    }
+                  }}
+                  onClick={() => {
+                    if (isCryptoPair && !isEmpty) {
+                      handleOrderBookRowClick("ask", i);
+                    }
+                  }}
                   className="relative grid grid-cols-3 px-3 py-[2px] hover:bg-[#1e2329] cursor-pointer group"
                   style={{ background: isEmpty ? "transparent" : `linear-gradient(to left, rgba(246,70,93,0.12) ${order.depthPct}%, transparent 0%)` }}>
                   <span className={`${isEmpty ? "text-transparent" : "text-[#f6465d]"} text-[11px] z-10 font-medium`}>
@@ -426,6 +558,26 @@ export default function CryptoBinanceLayout(props: Props) {
               const isEmpty = order.amount <= 0;
               return (
                 <div key={i}
+                  onMouseEnter={() => {
+                    if (isCryptoPair && !isEmpty) {
+                      setHoveredRow({ side: "bid", index: i });
+                    }
+                  }}
+                  onMouseLeave={() => {
+                    if (isCryptoPair) {
+                      setHoveredRow(null);
+                    }
+                  }}
+                  onMouseMove={(e) => {
+                    if (isCryptoPair && !isEmpty) {
+                      setMouseCoords({ x: e.clientX, y: e.clientY });
+                    }
+                  }}
+                  onClick={() => {
+                    if (isCryptoPair && !isEmpty) {
+                      handleOrderBookRowClick("bid", i);
+                    }
+                  }}
                   className="relative grid grid-cols-3 px-3 py-[2px] hover:bg-[#1e2329] cursor-pointer"
                   style={{ background: isEmpty ? "transparent" : `linear-gradient(to left, rgba(14,203,129,0.12) ${order.depthPct}%, transparent 0%)` }}>
                   <span className={`${isEmpty ? "text-transparent" : "text-[#0ecb81]"} text-[11px] z-10 font-medium`}>
@@ -626,7 +778,7 @@ export default function CryptoBinanceLayout(props: Props) {
 
                 {/* Price - INR */}
                 <div>
-                  <div className="flex items-center justify-between bg-[#1e2329] border border-[#2b3139] rounded px-3 py-2 focus-within:border-[#f0b90b] hover:border-[#474d57] transition-colors">
+                  <div className={`flex items-center justify-between bg-[#1e2329] border rounded px-3 py-2 focus-within:border-[#f0b90b] hover:border-[#474d57] transition-all duration-300 ${flashActive ? "border-[#f0b90b] bg-[#f0b90b]/10 ring-2 ring-[#f0b90b]/20" : "border-[#2b3139]"}`}>
                     <span className="text-[#848e9c] text-xs min-w-fit">Price</span>
                     <div className="flex items-center gap-2 ml-2 flex-1">
                       <input type="number" min="0"
@@ -652,7 +804,7 @@ export default function CryptoBinanceLayout(props: Props) {
                 </div>
 
                 {/* Amount */}
-                <div className="flex items-center justify-between bg-[#1e2329] border border-[#2b3139] rounded px-3 py-2 focus-within:border-[#f0b90b] hover:border-[#474d57] transition-colors">
+                <div className={`flex items-center justify-between bg-[#1e2329] border rounded px-3 py-2 focus-within:border-[#f0b90b] hover:border-[#474d57] transition-all duration-300 ${flashActive ? "border-[#f0b90b] bg-[#f0b90b]/10 ring-2 ring-[#f0b90b]/20" : "border-[#2b3139]"}`}>
                   <span className="text-[#848e9c] text-xs">Amount</span>
                   <div className="flex items-center gap-2 ml-2 flex-1">
                     <input type="number" min="0"
@@ -914,15 +1066,35 @@ export default function CryptoBinanceLayout(props: Props) {
               <span className="text-right">Time</span>
             </div>
             <div className="max-h-[160px] overflow-y-auto">
-              {marketTrades.map((t: any, i: number) => (
-                <div key={i} className="grid grid-cols-3 px-3 py-[2px]">
-                  <span className={`text-[11px] ${t.side === "buy" ? "text-[#0ecb81]" : "text-[#f6465d]"}`}>
-                    {t.price.toFixed(2)}
-                  </span>
-                  <span className="text-right text-[#eaecef] text-[11px]">{t.amount.toFixed(4)}</span>
-                  <span className="text-right text-[#848e9c] text-[11px]">{t.time}</span>
+              {!isCryptoPair || tradesTab === "Market Trades" ? (
+                marketTrades.map((t: any, i: number) => (
+                  <div key={i} className="grid grid-cols-3 px-3 py-[2px]">
+                    <span className={`text-[11px] ${t.side === "buy" ? "text-[#0ecb81]" : "text-[#f6465d]"}`}>
+                      {t.price.toFixed(2)}
+                    </span>
+                    <span className="text-right text-[#eaecef] text-[11px]">{t.amount.toFixed(4)}</span>
+                    <span className="text-right text-[#848e9c] text-[11px]">{t.time}</span>
+                  </div>
+                ))
+              ) : session ? (
+                myTrades.length === 0 ? (
+                  <div className="text-center py-6 text-xs text-[#848e9c]">No trades found</div>
+                ) : (
+                  myTrades.map((t: any, i: number) => (
+                    <div key={i} className="grid grid-cols-3 px-3 py-[2px]">
+                      <span className={`text-[11px] ${t.side === "buy" ? "text-[#0ecb81]" : "text-[#f6465d]"}`}>
+                        {t.price.toFixed(2)}
+                      </span>
+                      <span className="text-right text-[#eaecef] text-[11px]">{t.amount.toFixed(4)}</span>
+                      <span className="text-right text-[#848e9c] text-[11px]">{t.time}</span>
+                    </div>
+                  ))
+                )
+              ) : (
+                <div className="text-center py-6 text-xs text-[#848e9c] hover:underline cursor-pointer" onClick={() => router.push("/")}>
+                  Please sign in to view your trades
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
@@ -1094,6 +1266,32 @@ export default function CryptoBinanceLayout(props: Props) {
           )}
         </div>
       </div>
+
+      {hoverStats && (
+        <div
+          style={{
+            position: "fixed",
+            top: mouseCoords.y + 15,
+            left: mouseCoords.x + 15,
+            pointerEvents: "none",
+            zIndex: 9999,
+          }}
+          className="bg-[#1e2329]/95 border border-[#474d57] rounded-lg p-3 shadow-xl backdrop-blur text-xs font-mono text-[#eaecef] space-y-1"
+        >
+          <div className="flex justify-between gap-4">
+            <span className="text-[#848e9c]">Avg Price:</span>
+            <span>≈ ${hoverStats.avgPrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-[#848e9c]">Sum {coinSymbol}:</span>
+            <span>{hoverStats.sumBase.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-[#848e9c]">Sum USDC:</span>
+            <span>${hoverStats.sumQuote.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import NSEChart from "@/simulation/components/NSEChart";
 import type { TradeLot, ShortPosition, SellRecord, CoverRecord } from "@/lib/auth-types";
 import { useAuth } from "@/context/AuthContext";
+import SellLotModal from "@/simulation/components/SellLotModal";
 
 interface WalletLike {
   state: {
@@ -32,7 +33,7 @@ interface WalletLike {
 
 interface Props {
   selected: string;
-  liveTick: { price: number; inrPrice: number; change: number; changePct: number; isLive: boolean; timestamp: number; error?: string | null };
+  liveTick: { symbol: string; price: number; inrPrice: number; change: number; changePct: number; isLive: boolean; timestamp: number; error?: string | null };
   wallet: WalletLike;
   qty: number;
   setQty: (v: number) => void;
@@ -111,6 +112,83 @@ export default function CryptoBinanceLayout(props: Props) {
   const [takeProfitInput, setTakeProfitInput] = useState("");
   const [slMessage, setSlMessage] = useState<string | null>(null);
   const [coinSearch, setCoinSearch] = useState("");
+
+  const [buyTakeProfitInput, setBuyTakeProfitInput] = useState("");
+  const [buyStopLossInput, setBuyStopLossInput] = useState("");
+  const [sellTakeProfitInput, setSellTakeProfitInput] = useState("");
+  const [sellStopLossInput, setSellStopLossInput] = useState("");
+  const [cryptoSellModalOpen, setCryptoSellModalOpen] = useState(false);
+  const [localTradeMsg, setLocalTradeMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [isBuyPriceEdited, setIsBuyPriceEdited] = useState(false);
+  const [isSellPriceEdited, setIsSellPriceEdited] = useState(false);
+
+  // Sync inputs on token change or first load
+  const lastSyncedSymbol = useRef<string>("");
+  useEffect(() => {
+    // If the symbol changed, reset the synced status, price edited status, and clear inputs
+    if (selected !== lastSyncedSymbol.current) {
+      setBuyAmount("");
+      setSellAmount("");
+      setBuySliderPct(0);
+      setSellSliderPct(0);
+      setBuyTPSL(false);
+      setSellTPSL(false);
+      setBuyTakeProfitInput("");
+      setBuyStopLossInput("");
+      setSellTakeProfitInput("");
+      setSellStopLossInput("");
+      setIsBuyPriceEdited(false);
+      setIsSellPriceEdited(false);
+    }
+
+    // Sync price if the tick is for the selected symbol
+    if (liveTick.symbol === selected && currentPriceINR > 0) {
+      if (!isBuyPriceEdited) {
+        setBuyPriceINR(currentPriceINR);
+      }
+      if (!isSellPriceEdited) {
+        setSellPriceINR(currentPriceINR);
+      }
+      lastSyncedSymbol.current = selected;
+    }
+  }, [selected, currentPriceINR, liveTick.symbol, isBuyPriceEdited, isSellPriceEdited]);
+
+  const handleCryptoBuy = (stopLoss?: number, takeProfit?: number) => {
+    if (!liveTick.isLive) {
+      setLocalTradeMsg({ text: "❌ Cannot buy — price feed is unavailable right now.", ok: false });
+      setTimeout(() => setLocalTradeMsg(null), 4000);
+      return;
+    }
+    if (!props.marketStatus.open) {
+      setLocalTradeMsg({ text: "❌ Cannot buy — market is closed.", ok: false });
+      setTimeout(() => setLocalTradeMsg(null), 4000);
+      return;
+    }
+
+    const buyPrice = orderType === "Market" ? currentPriceINR : buyPriceINR;
+    const qtyVal = parseFloat(buyAmount || "0");
+    if (qtyVal <= 0) {
+      setLocalTradeMsg({ text: "❌ Enter a valid quantity to buy.", ok: false });
+      setTimeout(() => setLocalTradeMsg(null), 4000);
+      return;
+    }
+
+    const ok = wallet.buy(selected, qtyVal, buyPrice, stopLoss, takeProfit);
+    const totalCost = (qtyVal * buyPrice).toFixed(2);
+    if (ok) {
+      const usdToInrRate = currentPrice > 0 ? currentPriceINR / currentPrice : 83.0;
+      const displayPriceUSD = buyPrice / usdToInrRate;
+      setLocalTradeMsg({
+        text: `✅ Bought ${qtyVal.toFixed(4)} × ${selected} @ $${displayPriceUSD.toFixed(2)} (₹${buyPrice.toFixed(2)}) | Cost ₹${totalCost}`,
+        ok: true,
+      });
+      setBuyAmount("");
+      setBuySliderPct(0);
+    } else {
+      setLocalTradeMsg({ text: "❌ " + (wallet.lastError || "Trade failed"), ok: false });
+    }
+    setTimeout(() => { setLocalTradeMsg(null); wallet.clearError(); }, 4000);
+  };
 
   // Track price direction for order book
   const prevPrice = useRef(currentPrice);
@@ -368,18 +446,50 @@ export default function CryptoBinanceLayout(props: Props) {
     setFlashActive(true);
     setTimeout(() => setFlashActive(false), 500);
 
-    // Auto-fill price and amount in the form
+    // Auto-fill price, amount and sliders in the corresponding form
     if (side === "ask") {
-      props.setTradeMode("long");
       setBuyAmount(totalAmount.toFixed(4));
       setBuyPriceINR(avgPriceINR);
-      setSellPriceINR(avgPriceINR);
+      const pct = userBalance > 0 ? Math.min(100, Math.round((totalAmount * avgPriceINR / userBalance) * 100)) : 0;
+      setBuySliderPct(pct);
+      setIsBuyPriceEdited(true);
     } else {
-      props.setTradeMode("short");
       setSellAmount(totalAmount.toFixed(4));
-      setBuyPriceINR(avgPriceINR);
       setSellPriceINR(avgPriceINR);
+      const pct = userCoinBalance > 0 ? Math.min(100, Math.round((totalAmount / userCoinBalance) * 100)) : 0;
+      setSellSliderPct(pct);
+      setIsSellPriceEdited(true);
     }
+  };
+
+  const handleCryptoSellConfirm = (lotId: string, qtySold: number) => {
+    if (!liveTick.isLive) {
+      setLocalTradeMsg({ text: "❌ Cannot sell — price feed is unavailable right now.", ok: false });
+      setTimeout(() => setLocalTradeMsg(null), 4000);
+      return;
+    }
+    if (!props.marketStatus.open) {
+      setLocalTradeMsg({ text: "❌ Cannot sell — market is closed.", ok: false });
+      setTimeout(() => setLocalTradeMsg(null), 4000);
+      return;
+    }
+    const sellPrice = liveTick.inrPrice;
+    const lot = wallet.state.lots.find(l => l.lotId === lotId);
+    const ok = wallet.sellLot(lotId, qtySold, sellPrice);
+    if (ok) {
+      const pnl = (sellPrice - (lot?.buyPrice ?? 0)) * qtySold;
+      const pnlStr = (pnl >= 0 ? "+" : "") + "₹" + pnl.toFixed(2);
+      setLocalTradeMsg({
+        text: `✅ Sold ${qtySold.toFixed(4)} × ${selected} @ $${liveTick.price.toFixed(2)} (₹${sellPrice.toFixed(2)}) | P&L: ${pnlStr}`,
+        ok: pnl >= 0,
+      });
+      setSellAmount("");
+      setSellSliderPct(0);
+    } else {
+      setLocalTradeMsg({ text: "❌ " + (wallet.lastError || "Trade failed"), ok: false });
+    }
+    setCryptoSellModalOpen(false);
+    setTimeout(() => { setLocalTradeMsg(null); wallet.clearError(); }, 4000);
   };
 
   interface CoinRow { symbol: string; displayName: string; subLabel: string; price: number; changePercent: number; isUp: boolean }
@@ -426,7 +536,7 @@ export default function CryptoBinanceLayout(props: Props) {
     }
     return [];
   }, [apiOrderBook]);
-
+    
   // Top movers
   const topMovers = useMemo(() => {
     return [
@@ -654,6 +764,11 @@ export default function CryptoBinanceLayout(props: Props) {
                 {props.tradeMsg.text}
               </div>
             )}
+            {localTradeMsg && (
+              <div className={`px-4 py-2 text-xs font-medium ${localTradeMsg.ok ? "bg-[#0ecb8120] text-[#0ecb81]" : "bg-[#f6465d20] text-[#f6465d]"} border-b border-[#2b3139] flex-shrink-0`}>
+                {localTradeMsg.text}
+              </div>
+            )}
             {slMessage && (
               <div className="px-4 py-2 text-xs font-medium bg-[#f6465d20] text-[#f6465d] border-b border-[#2b3139] flex-shrink-0">
                 ⚠ {slMessage}
@@ -747,249 +862,603 @@ export default function CryptoBinanceLayout(props: Props) {
                   </button>
                 ))}
                 <span className="text-[#848e9c] cursor-help ml-1 text-sm">ⓘ</span>
-                <span className={`ml-auto text-xs px-2 py-0.5 rounded font-semibold ${isLong ? "bg-[#0ecb81] text-white" : "bg-[#f6465d] text-white"}`}>
-                  {isLong ? "▲ Long" : "▼ Short"}
-                </span>
+                {!isCryptoPair && (
+                  <span className={`ml-auto text-xs px-2 py-0.5 rounded font-semibold ${isLong ? "bg-[#0ecb81] text-white" : "bg-[#f6465d] text-white"}`}>
+                    {isLong ? "▲ Long" : "▼ Short"}
+                  </span>
+                )}
               </div>
 
-              {/* Single order form */}
-              <div className="p-4 flex flex-col gap-3">
-                {/* Long / Short Toggle */}
-                <div className="flex rounded overflow-hidden border border-[#2b3139]">
-                  <button
-                    onClick={() => { props.setTradeMode("long"); setStopLossInput(""); setTakeProfitInput(""); }}
-                    className={`flex-1 py-2 text-xs font-semibold transition-colors ${isLong
-                        ? "bg-[#0ecb81] text-white"
-                        : "bg-[#1e2329] text-[#848e9c] hover:text-white"
-                      }`}
-                  >
-                    ▲ Long
-                  </button>
-                  <button
-                    onClick={() => { props.setTradeMode("short"); setStopLossInput(""); setTakeProfitInput(""); }}
-                    className={`flex-1 py-2 text-xs font-semibold transition-colors ${isShort
-                        ? "bg-[#f6465d] text-white"
-                        : "bg-[#1e2329] text-[#848e9c] hover:text-white"
-                      }`}
-                  >
-                    ▼ Short
-                  </button>
-                </div>
+              {isCryptoPair ? (
+                /* Dual Buy/Sell Panel for Crypto */
+                <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#0b0e11]">
+                  {/* BUY PANEL (Left - Green Theme) */}
+                  <div className="flex flex-col justify-between bg-[#13161a] border border-[#2b3139] rounded-xl p-4 min-h-[420px]">
+                    <div className="flex flex-col gap-3">
+                      {/* Avbl quote currency (INR) */}
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-[#848e9c]">Avbl</span>
+                        <span className="text-[#0ecb81] font-bold">₹{userBalance.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
+                      </div>
 
-                {/* Price - INR */}
-                <div>
+                      {/* Price Input */}
+                      <div>
+                        <div className={`flex items-center justify-between bg-[#1e2329] border rounded-lg px-3 py-2.5 focus-within:border-[#0ecb81] hover:border-[#474d57] transition-all duration-300 ${orderType === "Market" ? "opacity-50" : ""} ${flashActive ? "border-[#0ecb81] bg-[#0ecb81]/10 ring-2 ring-[#0ecb81]/20" : "border-[#2b3139]"}`}>
+                          <span className="text-[#848e9c] text-xs min-w-fit">Price</span>
+                          <div className="flex items-center gap-2 ml-2 flex-1">
+                            <input
+                              type={orderType === "Market" ? "text" : "number"}
+                              disabled={orderType === "Market"}
+                              value={orderType === "Market" ? "Market Price" : buyPriceINR}
+                              onChange={e => {
+                                const v = parseFloat(e.target.value) || 0;
+                                if (v < 0) return;
+                                setBuyPriceINR(v);
+                                setIsBuyPriceEdited(true);
+                              }}
+                              className="bg-transparent text-white text-sm text-right flex-1 outline-none min-w-0"
+                            />
+                            <span className="text-[#848e9c] text-xs whitespace-nowrap">INR</span>
+                            {orderType !== "Market" && (
+                              <div className="flex flex-col ml-1">
+                                <button onClick={() => { setBuyPriceINR(p => p + 1); setIsBuyPriceEdited(true); }} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▲</button>
+                                <button onClick={() => { setBuyPriceINR(p => Math.max(0, p - 1)); setIsBuyPriceEdited(true); }} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▼</button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {orderType !== "Market" && (
+                          <div className="flex justify-end mt-1">
+                            <button onClick={() => { setBuyPriceINR(currentPriceINR); setIsBuyPriceEdited(false); }} className="text-[10px] text-[#0ecb81] hover:text-green-300 font-semibold">BBO</button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Amount Input */}
+                      <div className={`flex items-center justify-between bg-[#1e2329] border rounded-lg px-3 py-2.5 focus-within:border-[#0ecb81] hover:border-[#474d57] transition-all duration-300 ${flashActive ? "border-[#0ecb81] bg-[#0ecb81]/10 ring-2 ring-[#0ecb81]/20" : "border-[#2b3139]"}`}>
+                        <span className="text-[#848e9c] text-xs">Amount</span>
+                        <div className="flex items-center gap-2 ml-2 flex-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.0001"
+                            placeholder="0.0000"
+                            value={buyAmount}
+                            onChange={e => {
+                              const valStr = e.target.value;
+                              if (valStr !== "" && parseFloat(valStr) < 0) return;
+                              setBuyAmount(valStr);
+                              const val = parseFloat(valStr) || 0;
+                              const price = orderType === "Market" ? currentPriceINR : buyPriceINR;
+                              const pct = userBalance > 0 && price > 0 ? Math.min(100, Math.round((val * price / userBalance) * 100)) : 0;
+                              setBuySliderPct(isNaN(pct) ? 0 : pct);
+                            }}
+                            className="bg-transparent text-white text-sm text-right flex-1 outline-none min-w-0"
+                          />
+                          <span className="text-[#848e9c] text-xs">{coinSymbol}</span>
+                          <div className="flex flex-col ml-1">
+                            <button onClick={() => setBuyAmount(a => { const val = parseFloat(a || "0") + 0.0001; return val > 0 ? val.toFixed(4) : "0.0001"; })} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▲</button>
+                            <button onClick={() => setBuyAmount(a => { const val = Math.max(0, parseFloat(a || "0") - 0.0001); return val > 0 ? val.toFixed(4) : ""; })} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▼</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Slider */}
+                      <div className="px-1">
+                        <div className="relative">
+                          <input type="range" min="0" max="100" step="25"
+                            value={buySliderPct}
+                            onChange={e => {
+                              const pct = Number(e.target.value);
+                              setBuySliderPct(pct);
+                              const price = orderType === "Market" ? currentPriceINR : buyPriceINR;
+                              if (pct === 0) setBuyAmount("");
+                              else if (price > 0) {
+                                setBuyAmount(((userBalance * pct / 100) / price).toFixed(6));
+                              }
+                            }}
+                            className="w-full h-[2px] bg-[#2b3139] appearance-none accent-[#0ecb81] cursor-pointer
+                          [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
+                          [&::-webkit-slider-thumb]:bg-[#0ecb81] [&::-webkit-slider-thumb]:rotate-45 [&::-webkit-slider-thumb]:rounded-none"
+                          />
+                        </div>
+                        <div className="flex justify-between mt-1">
+                          {["0%", "25%", "50%", "75%", "100%"].map(p => {
+                            const pct = parseInt(p);
+                            return (
+                              <span key={p}
+                                onClick={() => {
+                                  setBuySliderPct(pct);
+                                  const price = orderType === "Market" ? currentPriceINR : buyPriceINR;
+                                  if (pct === 0) setBuyAmount("");
+                                  else if (price > 0) {
+                                    setBuyAmount(((userBalance * pct / 100) / price).toFixed(6));
+                                  }
+                                }}
+                                className="text-[10px] text-[#848e9c] hover:text-white cursor-pointer">
+                                {p}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Total Field */}
+                      <div className="flex items-center justify-between bg-[#1e2329] border border-[#2b3139] rounded-lg px-3 py-2">
+                        <span className="text-[#848e9c] text-xs">Total</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#848e9c] text-[10px]">Min ₹{minOrderINR}</span>
+                          <span className="text-white text-sm font-semibold">{(parseFloat(buyAmount || "0") * (orderType === "Market" ? currentPriceINR : buyPriceINR)).toFixed(2)}</span>
+                          <span className="text-[#848e9c] text-xs">INR</span>
+                        </div>
+                      </div>
+
+                      {/* TP/SL */}
+                      <label className="flex items-center gap-2 cursor-pointer mt-1">
+                        <input type="checkbox" checked={buyTPSL} onChange={e => setBuyTPSL(e.target.checked)} className="w-3 h-3 accent-[#0ecb81]" />
+                        <span className="text-[#848e9c] text-xs font-semibold">TP/SL</span>
+                      </label>
+                      {buyTPSL && (
+                        <div className="flex gap-2">
+                          <input placeholder="Take Profit ₹"
+                            value={buyTakeProfitInput}
+                            onChange={e => setBuyTakeProfitInput(e.target.value)}
+                            className="flex-1 bg-[#1e2329] border border-[#2b3139] rounded px-2 py-1 text-xs text-white outline-none focus:border-[#0ecb81]" />
+                          <input placeholder="Stop Loss ₹"
+                            value={buyStopLossInput}
+                            onChange={e => setBuyStopLossInput(e.target.value)}
+                            className="flex-1 bg-[#1e2329] border border-[#2b3139] rounded px-2 py-1 text-xs text-white outline-none focus:border-[#f6465d]" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-3 mt-4">
+                      {/* Validation message */}
+                      {(() => {
+                        if (!liveTick.isLive) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Price feed offline</div>;
+                        if (!props.marketStatus.open) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Market closed</div>;
+                        if (currentPrice <= 0) return <div className="text-[#f6465d] text-[11px] text-center font-medium">No price data</div>;
+                        const price = orderType === "Market" ? currentPriceINR : buyPriceINR;
+                        const total = parseFloat(buyAmount || "0") * price;
+                        if (!buyAmount || parseFloat(buyAmount) <= 0) return <div className="text-[#848e9c] text-[11px] text-center font-medium">Enter amount</div>;
+                        if (total <= 0) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Invalid amount</div>;
+                        if (total < minOrderINR) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Minimum order ₹{minOrderINR}</div>;
+                        if (total > userBalance) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Insufficient balance — need ₹{total.toFixed(2)}, have ₹{userBalance.toFixed(2)}</div>;
+                        return null;
+                      })()}
+
+                      {/* Buy Button */}
+                      <button
+                        onClick={() => {
+                          handleCryptoBuy(
+                            buyStopLossInput ? parseFloat(buyStopLossInput) : undefined,
+                            buyTakeProfitInput ? parseFloat(buyTakeProfitInput) : undefined
+                          );
+                        }}
+                        disabled={
+                          !liveTick.isLive ||
+                          !props.marketStatus.open ||
+                          currentPrice <= 0 ||
+                          parseFloat(buyAmount || "0") <= 0 ||
+                          (parseFloat(buyAmount || "0") * (orderType === "Market" ? currentPriceINR : buyPriceINR)) > userBalance
+                        }
+                        className="w-full py-3 rounded-lg text-sm font-semibold text-white bg-[#0ecb81] hover:bg-[#0ab36e] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Buy {coinSymbol}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* SELL PANEL (Right - Red Theme) */}
+                  <div className="flex flex-col justify-between bg-[#13161a] border border-[#2b3139] rounded-xl p-4 min-h-[420px]">
+                    <div className="flex flex-col gap-3">
+                      {/* Avbl base asset balance */}
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-[#848e9c]">Avbl</span>
+                        <span className="text-[#f6465d] font-bold">{userCoinBalance.toFixed(8)} {coinSymbol}</span>
+                      </div>
+
+                      {/* Price Input */}
+                      <div>
+                        <div className={`flex items-center justify-between bg-[#1e2329] border rounded-lg px-3 py-2.5 focus-within:border-[#f6465d] hover:border-[#474d57] transition-all duration-300 ${orderType === "Market" ? "opacity-50" : ""} ${flashActive ? "border-[#f6465d] bg-[#f6465d]/10 ring-2 ring-[#f6465d]/20" : "border-[#2b3139]"}`}>
+                          <span className="text-[#848e9c] text-xs min-w-fit">Price</span>
+                          <div className="flex items-center gap-2 ml-2 flex-1">
+                            <input
+                              type={orderType === "Market" ? "text" : "number"}
+                              disabled={orderType === "Market"}
+                              value={orderType === "Market" ? "Market Price" : sellPriceINR}
+                              onChange={e => {
+                                const v = parseFloat(e.target.value) || 0;
+                                if (v < 0) return;
+                                setSellPriceINR(v);
+                                setIsSellPriceEdited(true);
+                              }}
+                              className="bg-transparent text-white text-sm text-right flex-1 outline-none min-w-0"
+                            />
+                            <span className="text-[#848e9c] text-xs whitespace-nowrap">INR</span>
+                            {orderType !== "Market" && (
+                              <div className="flex flex-col ml-1">
+                                <button onClick={() => { setSellPriceINR(p => p + 1); setIsSellPriceEdited(true); }} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▲</button>
+                                <button onClick={() => { setSellPriceINR(p => Math.max(0, p - 1)); setIsSellPriceEdited(true); }} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▼</button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {orderType !== "Market" && (
+                          <div className="flex justify-end mt-1">
+                            <button onClick={() => { setSellPriceINR(currentPriceINR); setIsSellPriceEdited(false); }} className="text-[10px] text-[#f6465d] hover:text-red-300 font-semibold">BBO</button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Amount Input */}
+                      <div className={`flex items-center justify-between bg-[#1e2329] border rounded-lg px-3 py-2.5 focus-within:border-[#f6465d] hover:border-[#474d57] transition-all duration-300 ${flashActive ? "border-[#f6465d] bg-[#f6465d]/10 ring-2 ring-[#f6465d]/20" : "border-[#2b3139]"}`}>
+                        <span className="text-[#848e9c] text-xs">Amount</span>
+                        <div className="flex items-center gap-2 ml-2 flex-1">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.0001"
+                            placeholder="0.0000"
+                            value={sellAmount}
+                            onChange={e => {
+                              const valStr = e.target.value;
+                              if (valStr !== "" && parseFloat(valStr) < 0) return;
+                              setSellAmount(valStr);
+                              const val = parseFloat(valStr) || 0;
+                              const pct = userCoinBalance > 0 ? Math.min(100, Math.round((val / userCoinBalance) * 100)) : 0;
+                              setSellSliderPct(isNaN(pct) ? 0 : pct);
+                            }}
+                            className="bg-transparent text-white text-sm text-right flex-1 outline-none min-w-0"
+                          />
+                          <span className="text-[#848e9c] text-xs">{coinSymbol}</span>
+                          <div className="flex flex-col ml-1">
+                            <button onClick={() => setSellAmount(a => { const val = parseFloat(a || "0") + 0.0001; return val > 0 ? val.toFixed(4) : "0.0001"; })} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▲</button>
+                            <button onClick={() => setSellAmount(a => { const val = Math.max(0, parseFloat(a || "0") - 0.0001); return val > 0 ? val.toFixed(4) : ""; })} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▼</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Slider */}
+                      <div className="px-1">
+                        <div className="relative">
+                          <input type="range" min="0" max="100" step="25"
+                            value={sellSliderPct}
+                            onChange={e => {
+                              const pct = Number(e.target.value);
+                              setSellSliderPct(pct);
+                              if (pct === 0) setSellAmount("");
+                              else {
+                                setSellAmount((userCoinBalance * pct / 100).toFixed(6));
+                              }
+                            }}
+                            className="w-full h-[2px] bg-[#2b3139] appearance-none accent-[#f6465d] cursor-pointer
+                          [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
+                          [&::-webkit-slider-thumb]:bg-[#f6465d] [&::-webkit-slider-thumb]:rotate-45 [&::-webkit-slider-thumb]:rounded-none"
+                          />
+                        </div>
+                        <div className="flex justify-between mt-1">
+                          {["0%", "25%", "50%", "75%", "100%"].map(p => {
+                            const pct = parseInt(p);
+                            return (
+                              <span key={p}
+                                onClick={() => {
+                                  setSellSliderPct(pct);
+                                  if (pct === 0) setSellAmount("");
+                                  else {
+                                    setSellAmount((userCoinBalance * pct / 100).toFixed(6));
+                                  }
+                                }}
+                                className="text-[10px] text-[#848e9c] hover:text-white cursor-pointer">
+                                {p}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Total Field */}
+                      <div className="flex items-center justify-between bg-[#1e2329] border border-[#2b3139] rounded-lg px-3 py-2">
+                        <span className="text-[#848e9c] text-xs">Total</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#848e9c] text-[10px]">Min ₹{minOrderINR}</span>
+                          <span className="text-white text-sm font-semibold">{(parseFloat(sellAmount || "0") * (orderType === "Market" ? currentPriceINR : sellPriceINR)).toFixed(2)}</span>
+                          <span className="text-[#848e9c] text-xs">INR</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 mt-4">
+                      {/* Validation message */}
+                      {(() => {
+                        if (!liveTick.isLive) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Price feed offline</div>;
+                        if (!props.marketStatus.open) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Market closed</div>;
+                        if (currentPrice <= 0) return <div className="text-[#f6465d] text-[11px] text-center font-medium">No price data</div>;
+                        const price = orderType === "Market" ? currentPriceINR : sellPriceINR;
+                        const total = parseFloat(sellAmount || "0") * price;
+                        if (!sellAmount || parseFloat(sellAmount) <= 0) return <div className="text-[#848e9c] text-[11px] text-center font-medium">Enter amount</div>;
+                        if (total <= 0) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Invalid amount</div>;
+                        if (total < minOrderINR) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Minimum order ₹{minOrderINR}</div>;
+                        if (parseFloat(sellAmount || "0") > userCoinBalance) return <div className="text-[#f6465d] text-[11px] text-center font-medium">Insufficient balance — have {userCoinBalance.toFixed(6)} {coinSymbol}</div>;
+                        return null;
+                      })()}
+
+                      {/* Sell Button */}
+                      <button
+                        onClick={() => {
+                          const amtVal = parseFloat(sellAmount || "0");
+                          if (amtVal > 0) {
+                            const symbolLots = wallet.getOpenLots(selected);
+                            if (symbolLots.length === 0) {
+                              setLocalTradeMsg({ text: `❌ You do not own any positions of ${selected} to sell.`, ok: false });
+                              setTimeout(() => setLocalTradeMsg(null), 4000);
+                              return;
+                            }
+                            if (symbolLots.length === 1) {
+                              // Instant Sell when exactly 1 lot exists
+                              const singleLot = symbolLots[0];
+                              const qtyToSell = Math.min(amtVal, singleLot.remainingQty);
+                              handleCryptoSellConfirm(singleLot.lotId, qtyToSell);
+                            } else {
+                              // Open Lot Selector Modal if more than 1 lot exists
+                              setCryptoSellModalOpen(true);
+                            }
+                          }
+                        }}
+                        disabled={
+                          !liveTick.isLive ||
+                          !props.marketStatus.open ||
+                          currentPrice <= 0 ||
+                          parseFloat(sellAmount || "0") <= 0 ||
+                          parseFloat(sellAmount || "0") > userCoinBalance
+                        }
+                        className="w-full py-3 rounded-lg text-sm font-semibold text-white bg-[#f6465d] hover:bg-[#e03050] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Sell {coinSymbol}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Original Single Panel (Long/Short Toggle) for non-crypto assets */
+                <div className="p-4 flex flex-col gap-3">
+                  {/* Long / Short Toggle */}
+                  <div className="flex rounded overflow-hidden border border-[#2b3139]">
+                    <button
+                      onClick={() => { props.setTradeMode("long"); setStopLossInput(""); setTakeProfitInput(""); }}
+                      className={`flex-1 py-2 text-xs font-semibold transition-colors ${isLong
+                          ? "bg-[#0ecb81] text-white"
+                          : "bg-[#1e2329] text-[#848e9c] hover:text-white"
+                        }`}
+                    >
+                      ▲ Long
+                    </button>
+                    <button
+                      onClick={() => { props.setTradeMode("short"); setStopLossInput(""); setTakeProfitInput(""); }}
+                      className={`flex-1 py-2 text-xs font-semibold transition-colors ${isShort
+                          ? "bg-[#f6465d] text-white"
+                          : "bg-[#1e2329] text-[#848e9c] hover:text-white"
+                        }`}
+                    >
+                      ▼ Short
+                    </button>
+                  </div>
+
+                  {/* Price - INR */}
+                  <div>
+                    <div className={`flex items-center justify-between bg-[#1e2329] border rounded px-3 py-2 focus-within:border-[#f0b90b] hover:border-[#474d57] transition-all duration-300 ${flashActive ? "border-[#f0b90b] bg-[#f0b90b]/10 ring-2 ring-[#f0b90b]/20" : "border-[#2b3139]"}`}>
+                      <span className="text-[#848e9c] text-xs min-w-fit">Price</span>
+                      <div className="flex items-center gap-2 ml-2 flex-1">
+                        <input type="number" min="0"
+                          value={isLong ? buyPriceINR : sellPriceINR}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value) || 0;
+                            if (v < 0) return;
+                            if (isLong) setBuyPriceINR(v);
+                            else setSellPriceINR(v);
+                          }}
+                          className="bg-transparent text-white text-sm text-right flex-1 outline-none min-w-0"
+                        />
+                        <span className="text-[#848e9c] text-xs whitespace-nowrap">INR</span>
+                        <div className="flex flex-col ml-1">
+                          <button onClick={() => { if (isLong) setBuyPriceINR(p => p + 1); else setSellPriceINR(p => p + 1); }} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▲</button>
+                          <button onClick={() => { if (isLong) setBuyPriceINR(p => Math.max(0, p - 1)); else setSellPriceINR(p => Math.max(0, p - 1)); }} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▼</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end mt-1">
+                      <button onClick={() => { if (isLong) setBuyPriceINR(currentPriceINR); else setSellPriceINR(currentPriceINR); }} className="text-[10px] text-[#f0b90b] hover:text-yellow-300 font-semibold">BBO</button>
+                    </div>
+                  </div>
+
+                  {/* Amount */}
                   <div className={`flex items-center justify-between bg-[#1e2329] border rounded px-3 py-2 focus-within:border-[#f0b90b] hover:border-[#474d57] transition-all duration-300 ${flashActive ? "border-[#f0b90b] bg-[#f0b90b]/10 ring-2 ring-[#f0b90b]/20" : "border-[#2b3139]"}`}>
-                    <span className="text-[#848e9c] text-xs min-w-fit">Price</span>
+                    <span className="text-[#848e9c] text-xs">Amount</span>
                     <div className="flex items-center gap-2 ml-2 flex-1">
                       <input type="number" min="0"
-                        value={isLong ? buyPriceINR : sellPriceINR}
+                        value={isLong ? buyAmount : sellAmount}
                         onChange={e => {
-                          const v = parseFloat(e.target.value) || 0;
-                          if (v < 0) return;
-                          if (isLong) setBuyPriceINR(v);
-                          else setSellPriceINR(v);
+                          const v = e.target.value;
+                          if (v !== "" && parseFloat(v) < 0) return;
+                          if (isLong) setBuyAmount(v);
+                          else setSellAmount(v);
                         }}
+                        placeholder="0.00000"
                         className="bg-transparent text-white text-sm text-right flex-1 outline-none min-w-0"
                       />
-                      <span className="text-[#848e9c] text-xs whitespace-nowrap">INR</span>
+                      <span className="text-[#848e9c] text-xs">{coinSymbol}</span>
                       <div className="flex flex-col ml-1">
-                        <button onClick={() => { if (isLong) setBuyPriceINR(p => p + 1); else setSellPriceINR(p => p + 1); }} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▲</button>
-                        <button onClick={() => { if (isLong) setBuyPriceINR(p => Math.max(0, p - 1)); else setSellPriceINR(p => Math.max(0, p - 1)); }} className="text-[#848e9c] hover:text-white leading-none text-[10px]">▼</button>
+                        <button className="text-[#848e9c] hover:text-white leading-none text-[10px]">▲</button>
+                        <button className="text-[#848e9c] hover:text-white leading-none text-[10px]">▼</button>
                       </div>
                     </div>
                   </div>
-                  <div className="flex justify-end mt-1">
-                    <button onClick={() => { if (isLong) setBuyPriceINR(currentPriceINR); else setSellPriceINR(currentPriceINR); }} className="text-[10px] text-[#f0b90b] hover:text-yellow-300 font-semibold">BBO</button>
-                  </div>
-                </div>
 
-                {/* Amount */}
-                <div className={`flex items-center justify-between bg-[#1e2329] border rounded px-3 py-2 focus-within:border-[#f0b90b] hover:border-[#474d57] transition-all duration-300 ${flashActive ? "border-[#f0b90b] bg-[#f0b90b]/10 ring-2 ring-[#f0b90b]/20" : "border-[#2b3139]"}`}>
-                  <span className="text-[#848e9c] text-xs">Amount</span>
-                  <div className="flex items-center gap-2 ml-2 flex-1">
-                    <input type="number" min="0"
-                      value={isLong ? buyAmount : sellAmount}
-                      onChange={e => {
-                        const v = e.target.value;
-                        if (v !== "" && parseFloat(v) < 0) return;
-                        if (isLong) setBuyAmount(v);
-                        else setSellAmount(v);
-                      }}
-                      placeholder="0.00000"
-                      className="bg-transparent text-white text-sm text-right flex-1 outline-none min-w-0"
-                    />
-                    <span className="text-[#848e9c] text-xs">{coinSymbol}</span>
-                    <div className="flex flex-col ml-1">
-                      <button className="text-[#848e9c] hover:text-white leading-none text-[10px]">▲</button>
-                      <button className="text-[#848e9c] hover:text-white leading-none text-[10px]">▼</button>
+                  {/* Diamond percentage slider */}
+                  <div className="px-1">
+                    <div className="relative">
+                      <input type="range" min="0" max="100" step="25"
+                        value={isLong ? buySliderPct : sellSliderPct}
+                        onChange={e => {
+                          const pct = Number(e.target.value);
+                          if (isLong) {
+                            setBuySliderPct(pct);
+                            const amt = (userBalance * pct / 100) / currentPriceINR;
+                            setBuyAmount(pct === 0 ? "" : amt.toFixed(6));
+                          } else {
+                            setSellSliderPct(pct);
+                            setSellAmount(pct === 0 ? "" : (userCoinBalance * pct / 100).toFixed(6));
+                          }
+                        }}
+                        className="w-full h-[2px] bg-[#2b3139] appearance-none accent-[#f0b90b] cursor-pointer
+                      [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
+                      [&::-webkit-slider-thumb]:bg-[#f0b90b] [&::-webkit-slider-thumb]:rotate-45 [&::-webkit-slider-thumb]:rounded-none"
+                      />
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      {["0%", "25%", "50%", "75%", "100%"].map(p => {
+                        const pct = parseInt(p);
+                        return (
+                          <span key={p}
+                            onClick={() => {
+                              if (isLong) {
+                                setBuySliderPct(pct);
+                                if (pct === 0) setBuyAmount("");
+                                else setBuyAmount(((userBalance * pct / 100) / currentPriceINR).toFixed(6));
+                              } else {
+                                setSellSliderPct(pct);
+                                setSellAmount(pct === 0 ? "" : (userCoinBalance * pct / 100).toFixed(6));
+                              }
+                            }}
+                            className="text-[10px] text-[#848e9c] hover:text-white cursor-pointer">
+                            {p}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
-                </div>
 
-                {/* Diamond percentage slider */}
-                <div className="px-1">
-                  <div className="relative">
-                    <input type="range" min="0" max="100" step="25"
-                      value={isLong ? buySliderPct : sellSliderPct}
-                      onChange={e => {
-                        const pct = Number(e.target.value);
-                        if (isLong) {
-                          setBuySliderPct(pct);
-                          const amt = (userBalance * pct / 100) / currentPriceINR;
-                          setBuyAmount(pct === 0 ? "" : amt.toFixed(6));
-                        } else {
-                          setSellSliderPct(pct);
-                          setSellAmount(pct === 0 ? "" : (userCoinBalance * pct / 100).toFixed(6));
-                        }
-                      }}
-                      className="w-full h-[2px] bg-[#2b3139] appearance-none accent-[#f0b90b] cursor-pointer
-                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
-                    [&::-webkit-slider-thumb]:bg-[#f0b90b] [&::-webkit-slider-thumb]:rotate-45 [&::-webkit-slider-thumb]:rounded-none"
-                    />
+                  {/* Total - INR */}
+                  <div className="flex items-center justify-between bg-[#1e2329] border border-[#2b3139] rounded px-3 py-2">
+                    <span className="text-[#848e9c] text-xs">Total</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[#848e9c] text-[10px]">Minimum ₹{minOrderINR}</span>
+                      <span className="text-white text-sm">{(isLong ? buyTotal : sellTotal).toFixed(2)}</span>
+                      <span className="text-[#848e9c] text-xs">INR</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between mt-1">
-                    {["0%", "25%", "50%", "75%", "100%"].map(p => {
-                      const pct = parseInt(p);
-                      return (
-                        <span key={p}
-                          onClick={() => {
-                            if (isLong) {
-                              setBuySliderPct(pct);
-                              if (pct === 0) setBuyAmount("");
-                              else setBuyAmount(((userBalance * pct / 100) / currentPriceINR).toFixed(6));
-                            } else {
-                              setSellSliderPct(pct);
-                              setSellAmount(pct === 0 ? "" : (userCoinBalance * pct / 100).toFixed(6));
-                            }
-                          }}
-                          className="text-[10px] text-[#848e9c] hover:text-white cursor-pointer">
-                          {p}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
 
-                {/* Total - INR */}
-                <div className="flex items-center justify-between bg-[#1e2329] border border-[#2b3139] rounded px-3 py-2">
-                  <span className="text-[#848e9c] text-xs">Total</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[#848e9c] text-[10px]">Minimum ₹{minOrderINR}</span>
-                    <span className="text-white text-sm">{(isLong ? buyTotal : sellTotal).toFixed(2)}</span>
-                    <span className="text-[#848e9c] text-xs">INR</span>
-                  </div>
-                </div>
-
-                {/* TP/SL */}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={isLong ? buyTPSL : sellTPSL} onChange={e => { if (isLong) setBuyTPSL(e.target.checked); else setSellTPSL(e.target.checked); }} className="w-3 h-3 accent-[#f0b90b]" />
-                  <span className="text-[#848e9c] text-xs">TP/SL</span>
-                </label>
-            {(isLong ? buyTPSL : sellTPSL) && (
-              <div className="flex gap-2">
-                <input placeholder="Take Profit ₹"
-                  value={takeProfitInput}
-                  onChange={e => setTakeProfitInput(e.target.value)}
-                  className="flex-1 bg-[#1e2329] border border-[#2b3139] rounded px-2 py-1 text-xs text-white outline-none focus:border-[#0ecb81]" />
-                <input placeholder="Stop Loss ₹"
-                  value={stopLossInput}
-                  onChange={e => setStopLossInput(e.target.value)}
-                  className="flex-1 bg-[#1e2329] border border-[#2b3139] rounded px-2 py-1 text-xs text-white outline-none focus:border-[#f6465d]" />
-              </div>
-            )}
-
-                {/* Avbl / Max / Est Fee */}
-                <div className="space-y-1 text-xs">
-                  {isLong ? (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Avbl ▾</span>
-                        <span className="text-white">₹{userBalance.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Max Buy</span>
-                        <span className="text-white">{maxBuyAmount.toFixed(6)} {coinSymbol}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Est. Fee (0.1%)</span>
-                        <span className="text-white">₹{(buyTotal * 0.001).toFixed(2)}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Avbl ▾</span>
-                        <span className="text-white">{userCoinBalance.toFixed(8)} {coinSymbol}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Max Sell</span>
-                        <span className="text-white">₹{(userCoinBalance * sellPriceINR).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Est. Fee (0.1%)</span>
-                        <span className="text-white">₹{(sellTotal * 0.001).toFixed(2)}</span>
-                      </div>
-                    </>
+                  {/* TP/SL */}
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={isLong ? buyTPSL : sellTPSL} onChange={e => { if (isLong) setBuyTPSL(e.target.checked); else setSellTPSL(e.target.checked); }} className="w-3 h-3 accent-[#f0b90b]" />
+                    <span className="text-[#848e9c] text-xs">TP/SL</span>
+                  </label>
+                  {(isLong ? buyTPSL : sellTPSL) && (
+                    <div className="flex gap-2">
+                      <input placeholder="Take Profit ₹"
+                        value={takeProfitInput}
+                        onChange={e => setTakeProfitInput(e.target.value)}
+                        className="flex-1 bg-[#1e2329] border border-[#2b3139] rounded px-2 py-1 text-xs text-white outline-none focus:border-[#0ecb81]" />
+                      <input placeholder="Stop Loss ₹"
+                        value={stopLossInput}
+                        onChange={e => setStopLossInput(e.target.value)}
+                        className="flex-1 bg-[#1e2329] border border-[#2b3139] rounded px-2 py-1 text-xs text-white outline-none focus:border-[#f6465d]" />
+                    </div>
                   )}
+
+                  {/* Avbl / Max / Est Fee */}
+                  <div className="space-y-1 text-xs">
+                    {isLong ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Avbl ▾</span>
+                          <span className="text-white">₹{userBalance.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Max Buy</span>
+                          <span className="text-white">{maxBuyAmount.toFixed(6)} {coinSymbol}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Est. Fee (0.1%)</span>
+                          <span className="text-white">₹{(buyTotal * 0.001).toFixed(2)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Avbl ▾</span>
+                          <span className="text-white">{userCoinBalance.toFixed(8)} {coinSymbol}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Max Sell</span>
+                          <span className="text-white">₹{(userCoinBalance * sellPriceINR).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-[#848e9c] underline decoration-dotted cursor-pointer">Est. Fee (0.1%)</span>
+                          <span className="text-white">₹{(sellTotal * 0.001).toFixed(2)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Balance error message */}
+                  {(() => {
+                    if (!liveTick.isLive) return <div className="text-[#f6465d] text-[11px] text-center">Price feed offline</div>;
+                    if (!props.marketStatus.open) return <div className="text-[#f6465d] text-[11px] text-center">Market closed</div>;
+                    if (currentPrice <= 0) return <div className="text-[#f6465d] text-[11px] text-center">No price data</div>;
+                    if (isLong) {
+                      if (!buyAmount || parseFloat(buyAmount) <= 0) return <div className="text-[#848e9c] text-[11px] text-center">Enter amount</div>;
+                      if (buyTotal <= 0) return <div className="text-[#f6465d] text-[11px] text-center">Invalid amount</div>;
+                      if (buyTotal < minOrderINR) return <div className="text-[#f6465d] text-[11px] text-center">Minimum order ₹{minOrderINR}</div>;
+                      if (buyTotal > userBalance) return <div className="text-[#f6465d] text-[11px] text-center">Insufficient balance — need ₹{buyTotal.toFixed(2)}, have ₹{userBalance.toFixed(2)}</div>;
+                    } else {
+                      if (!sellAmount || parseFloat(sellAmount) <= 0) return <div className="text-[#848e9c] text-[11px] text-center">Enter amount</div>;
+                      if (sellTotal <= 0) return <div className="text-[#f6465d] text-[11px] text-center">Invalid amount</div>;
+                      if (sellTotal < minOrderINR) return <div className="text-[#f6465d] text-[11px] text-center">Minimum order ₹{minOrderINR}</div>;
+                      if (sellTotal > userBalance) return <div className="text-[#f6465d] text-[11px] text-center">Insufficient margin — need ₹{sellTotal.toFixed(2)}, have ₹{userBalance.toFixed(2)}</div>;
+                    }
+                    return null;
+                  })()}
+
+                  {/* ACTION BUTTONS - always show primary + secondary like NSE layout */}
+                  <div className="flex gap-2">
+                    {isLong ? (
+                      <button
+                        onClick={() => handleBuy(stopLossInput ? parseFloat(stopLossInput) : undefined, takeProfitInput ? parseFloat(takeProfitInput) : undefined)}
+                        disabled={!liveTick.isLive || !props.marketStatus.open || currentPrice <= 0 || buyTotal <= 0 || buyTotal > userBalance}
+                        className="flex-1 py-3 rounded text-sm font-semibold text-white bg-[#0ecb81] hover:bg-[#0ab36e] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Buy {coinSymbol}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleOpenShort(stopLossInput ? parseFloat(stopLossInput) : undefined, takeProfitInput ? parseFloat(takeProfitInput) : undefined)}
+                        disabled={!liveTick.isLive || !props.marketStatus.open || sellTotal <= 0 || sellTotal > userBalance}
+                        className="flex-1 py-3 rounded text-sm font-semibold text-white bg-[#f6465d] hover:bg-[#e03050] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        SHORT — Sell to Open
+                      </button>
+                    )}
+                    {isLong ? (
+                      <button
+                        onClick={handleSellClick}
+                        disabled={!liveTick.isLive || !props.marketStatus.open || userCoinBalance <= 0}
+                        className="flex-1 py-3 rounded text-sm font-semibold text-white bg-[#f6465d] hover:bg-[#e03050] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Sell {coinSymbol}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleCoverClick}
+                        disabled={!liveTick.isLive || !props.marketStatus.open || !hasShortPosition}
+                        className="flex-1 py-3 rounded text-sm font-semibold text-white bg-[#4b5563] hover:bg-[#374151] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        COVER
+                      </button>
+                    )}
+                  </div>
                 </div>
-
-                {/* Balance error message */}
-                {(() => {
-                  if (!liveTick.isLive) return <div className="text-[#f6465d] text-[11px] text-center">Price feed offline</div>;
-                  if (!props.marketStatus.open) return <div className="text-[#f6465d] text-[11px] text-center">Market closed</div>;
-                  if (currentPrice <= 0) return <div className="text-[#f6465d] text-[11px] text-center">No price data</div>;
-                  if (isLong) {
-                    if (!buyAmount || parseFloat(buyAmount) <= 0) return <div className="text-[#848e9c] text-[11px] text-center">Enter amount</div>;
-                    if (buyTotal <= 0) return <div className="text-[#f6465d] text-[11px] text-center">Invalid amount</div>;
-                    if (buyTotal < minOrderINR) return <div className="text-[#f6465d] text-[11px] text-center">Minimum order ₹{minOrderINR}</div>;
-                    if (buyTotal > userBalance) return <div className="text-[#f6465d] text-[11px] text-center">Insufficient balance — need ₹{buyTotal.toFixed(2)}, have ₹{userBalance.toFixed(2)}</div>;
-                  } else {
-                    if (!sellAmount || parseFloat(sellAmount) <= 0) return <div className="text-[#848e9c] text-[11px] text-center">Enter amount</div>;
-                    if (sellTotal <= 0) return <div className="text-[#f6465d] text-[11px] text-center">Invalid amount</div>;
-                    if (sellTotal < minOrderINR) return <div className="text-[#f6465d] text-[11px] text-center">Minimum order ₹{minOrderINR}</div>;
-                    if (sellTotal > userBalance) return <div className="text-[#f6465d] text-[11px] text-center">Insufficient margin — need ₹{sellTotal.toFixed(2)}, have ₹{userBalance.toFixed(2)}</div>;
-                  }
-                  return null;
-                })()}
-
-                {/* ACTION BUTTONS - always show primary + secondary like NSE layout */}
-                <div className="flex gap-2">
-              {isLong ? (
-                <button
-                  onClick={() => handleBuy(stopLossInput ? parseFloat(stopLossInput) : undefined, takeProfitInput ? parseFloat(takeProfitInput) : undefined)}
-                  disabled={!liveTick.isLive || !props.marketStatus.open || currentPrice <= 0 || buyTotal <= 0 || buyTotal > userBalance}
-                  className="flex-1 py-3 rounded text-sm font-semibold text-white bg-[#0ecb81] hover:bg-[#0ab36e] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Buy {coinSymbol}
-                </button>
-              ) : (
-                <button
-                  onClick={() => handleOpenShort(stopLossInput ? parseFloat(stopLossInput) : undefined, takeProfitInput ? parseFloat(takeProfitInput) : undefined)}
-                  disabled={!liveTick.isLive || !props.marketStatus.open || sellTotal <= 0 || sellTotal > userBalance}
-                  className="flex-1 py-3 rounded text-sm font-semibold text-white bg-[#f6465d] hover:bg-[#e03050] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  SHORT — Sell to Open
-                </button>
               )}
-                  {isLong ? (
-                    <button
-                      onClick={handleSellClick}
-                      disabled={!liveTick.isLive || !props.marketStatus.open || userCoinBalance <= 0}
-                      className="flex-1 py-3 rounded text-sm font-semibold text-white bg-[#f6465d] hover:bg-[#e03050] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Sell {coinSymbol}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleCoverClick}
-                      disabled={!liveTick.isLive || !props.marketStatus.open || !hasShortPosition}
-                      className="flex-1 py-3 rounded text-sm font-semibold text-white bg-[#4b5563] hover:bg-[#374151] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      COVER
-                    </button>
-                  )}
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -1266,6 +1735,22 @@ export default function CryptoBinanceLayout(props: Props) {
           )}
         </div>
       </div>
+
+      <SellLotModal
+        isOpen={cryptoSellModalOpen}
+        lots={wallet.getOpenLots(selected)}
+        initialSelectedLot={wallet.getOpenLots(selected)[0] || null}
+        currentPrice={liveTick.inrPrice}
+        marketOpen={props.marketStatus.open}
+        initialQty={parseFloat(sellAmount) || undefined}
+        onConfirm={(lotId, qty) => {
+          handleCryptoSellConfirm(lotId, qty);
+        }}
+        onClose={() => {
+          setCryptoSellModalOpen(false);
+        }}
+        isShort={false}
+      />
 
       {hoverStats && (
         <div

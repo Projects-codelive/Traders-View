@@ -12,6 +12,7 @@ interface Props {
   onClose: () => void;
   isShort?: boolean;
   marketOpen: boolean;
+  initialQty?: number;
 }
 
 export default function SellLotModal({
@@ -23,6 +24,7 @@ export default function SellLotModal({
   onClose,
   isShort,
   marketOpen,
+  initialQty,
 }: Props) {
   const [selectedLotId, setSelectedLotId] = useState<string>("");
   const [qty, setQty] = useState(1);
@@ -38,7 +40,7 @@ export default function SellLotModal({
       } else {
         setSelectedLotId("");
       }
-      setQty(1);
+      setQty(initialQty !== undefined ? initialQty : 1);
       setError("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -47,7 +49,8 @@ export default function SellLotModal({
   const activeLot = lots.find((l) => l.lotId === selectedLotId) || lots[0];
   const isCrypto = activeLot?.symbol.endsWith("-USD") ?? false;
   const minQty = isCrypto ? 0.000001 : 1;
-  const step = isCrypto ? 0.000001 : 1;
+  const step = isCrypto ? 0.0001 : 1;
+  const baseAsset = isCrypto && activeLot ? activeLot.symbol.split("-")[0] : "Share";
 
   // Clamp quantity if selected lot or its remaining quantity changes
   const remainingQty = activeLot?.remainingQty;
@@ -104,7 +107,7 @@ export default function SellLotModal({
           <div>
             <h2 className="text-lg font-bold text-white">{isShort ? "Cover Short" : "Sell"} {activeLot.symbol}</h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              {isShort ? "Choose a short position to cover" : "Choose an entry lot to sell shares from"}
+              {isShort ? "Choose a short position to cover" : isCrypto ? "Choose an entry lot to sell from" : "Choose an entry lot to sell shares from"}
             </p>
           </div>
           <button
@@ -158,7 +161,9 @@ export default function SellLotModal({
                       <div>
                         <div className="text-[10px] text-gray-500">{buyDate}</div>
                         <div className="text-sm font-semibold text-white mt-0.5">
-                        {lot.remainingQty} Share{lot.remainingQty !== 1 && "s"}{" "}
+                        {isCrypto
+                          ? `${lot.remainingQty.toFixed(4)} ${baseAsset}`
+                          : `${lot.remainingQty} Share${lot.remainingQty !== 1 ? "s" : ""}`}{" "}
                         @ {csym}{lot.buyPrice.toFixed(2)}
                         </div>
                       </div>
@@ -186,7 +191,7 @@ export default function SellLotModal({
             {[
               { label: isShort ? "Short Price" : "Lot Buy Price", value: `${csym}${activeLot.buyPrice.toFixed(2)}` },
               { label: "Current Price", value: `${csym}${currentPrice.toFixed(2)}` },
-              { label: "Lot Shares Held", value: `${activeLot.remainingQty}` },
+              { label: isCrypto ? `Lot ${baseAsset} Held` : "Lot Shares Held", value: isCrypto ? `${activeLot.remainingQty.toFixed(4)}` : `${activeLot.remainingQty}` },
             ].map((s) => (
               <div key={s.label} className="bg-gray-850 border border-gray-800 rounded-xl p-3 text-center">
                 <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">{s.label}</div>
@@ -198,7 +203,7 @@ export default function SellLotModal({
           {/* Qty Input controls */}
           <div>
             <label className="text-xs text-gray-400 block font-semibold uppercase tracking-wider mb-1.5">
-              {isShort ? "Quantity to Cover" : "Quantity to Sell"}
+              {isShort ? "Quantity to Cover" : isCrypto ? `Quantity to Sell (${baseAsset})` : "Quantity to Sell"}
             </label>
             <div className="flex items-center gap-2">
               <button
@@ -284,7 +289,7 @@ export default function SellLotModal({
                 </div>
               </div>
               <div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">P&L per share</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">{isCrypto ? `P&L per ${baseAsset}` : "P&L per share"}</div>
                 <div
                   className={`text-sm font-bold font-mono ${
                     isProfit ? "text-green-400" : "text-red-400"
@@ -309,9 +314,10 @@ export default function SellLotModal({
 
           {activeLot.remainingQty - qty > 0 && (
             <p className="text-[10px] text-gray-500 text-center">
-              {activeLot.remainingQty - qty} share
-              {activeLot.remainingQty - qty !== 1 ? "s" : ""} will remain in this
-              lot after sale.
+              {isCrypto
+                ? `${parseFloat((activeLot.remainingQty - qty).toFixed(6))} ${baseAsset}`
+                : `${activeLot.remainingQty - qty} share${activeLot.remainingQty - qty !== 1 ? "s" : ""}`}{" "}
+              will remain in this lot after sale.
             </p>
           )}
 
